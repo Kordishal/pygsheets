@@ -57,11 +57,16 @@ class Client(object):
     >>> c = pygsheets.Client(oauth=OAuthCredentialObject)
 
     """
+
+    spreadsheet_cls = Spreadsheet
+
     def __init__(self, oauth, http_client=None, retries=1, no_cache=False):
         if no_cache:
             cache = None
         else:
             cache = os.path.join(tempfile.gettempdir(), str(uuid.uuid4()))
+        if os.name == "nt":
+            cache = "\\\\?\\" + cache
 
         self.oauth = oauth
         http_client = http_client or httplib2.Http(cache=cache, timeout=20)
@@ -76,17 +81,19 @@ class Client(object):
         self.retries = retries
         self.enableTeamDriveSupport = False  # if teamdrive files should be included
         self.teamDriveId = None  # teamdrive to search for spreadsheet
-        self._fetch_sheets()
+        self._spreadsheeets = self._fetch_sheets()
 
-    def _fetch_sheets(self):
+    def _fetch_sheets(self, filter_query=""):
         """
         fetch all the sheets info from user's gdrive
 
         :returns: None
         """
+        if filter_query != "":
+            filter_query = " and " + filter_query
         request = self.driveService.files().list(corpora='teamDrive' if self.teamDriveId else 'user', pageSize=500,
                                                  fields="files(id, name)", teamDriveId=self.teamDriveId,
-                                                 q="mimeType='application/vnd.google-apps.spreadsheet'",
+                                                 q="mimeType='application/vnd.google-apps.spreadsheet'"+filter_query,
                                                  supportsTeamDrives=self.enableTeamDriveSupport,
                                                  includeTeamDriveItems=self.enableTeamDriveSupport)
         results = self._execute_request(None, request, False)
@@ -94,7 +101,7 @@ class Client(object):
             results = results['files']
         except KeyError:
             results = []
-        self._spreadsheeets = results
+        return results
 
     def create(self, title, parent_id=None):
         """Creates a spreadsheet, returning a :class:`~pygsheets.Spreadsheet` instance.
@@ -109,8 +116,9 @@ class Client(object):
         self._spreadsheeets.append({'name': title, "id": result['spreadsheetId']})
         if parent_id:
             self._execute_request(None, self.driveService.files().update(fileId=result['spreadsheetId'],
-                                                                         addParents=parent_id, fields='id, parents'), False)
-        return Spreadsheet(self, jsonsheet=result)
+                                                                         addParents=parent_id, fields='id, parents',
+                                                                         supportsTeamDrives=self.enableTeamDriveSupport), False)
+        return self.spreadsheet_cls(self, jsonsheet=result)
 
     def delete(self, title=None, spreadsheet_id=None):
         """Deletes, a spreadsheet by title or id.
@@ -166,9 +174,9 @@ class Client(object):
             ssheet_id = [x['id'] for x in self._spreadsheeets if x["name"] == title][0]
             return self.open_by_key(ssheet_id)
         except IndexError:
-            self._fetch_sheets()
+            self._spreadsheeets = self._fetch_sheets()
             try:
-                return [Spreadsheet(self, id=x['id']) for x in self._spreadsheeets if x["name"] == title][0]
+                return [self.spreadsheet_cls(self, id=x['id']) for x in self._spreadsheeets if x["name"] == title][0]
             except IndexError:
                 raise SpreadsheetNotFound(title)
 
@@ -190,7 +198,7 @@ class Client(object):
         except Exception as e:
             raise e
         if returnas == 'spreadsheet':
-            return Spreadsheet(self, result)
+            return self.spreadsheet_cls(self, result)
         elif returnas == 'json':
             return result
         else:
@@ -221,28 +229,52 @@ class Client(object):
             else:
                 raise NoValidUrlKeyFound
 
-    def open_all(self, title=None):
+    def open_all(self, title=None, filter_query=""):
         """
         Opens all available spreadsheets,
 
         :param title: (optional) If specified can be used to filter spreadsheets by title.
+        :param filter_query : (optional) either title or query, see https://developers.google.com/drive/v3/web/search-parameters
 
         :returns: list of :class:`~pygsheets.Spreadsheet` instances
-        """
-        return [Spreadsheet(self, id=x['id']) for x in self._spreadsheeets if ((title is None) or (x['name'] == title))]
 
-    def list_ssheets(self):
+        """
+        if title is not None:
+            return [self.spreadsheet_cls(self, id=x['id']) for x in self._spreadsheeets if ((title is None) or (x['name'] == title))]
+        if filter_query != "":
+            tssheets = self._fetch_sheets(filter_query)
+            return [self.spreadsheet_cls(self, id=x['id']) for x in tssheets]
+
+    def list_ssheets(self, parent_id=None):
         """
         Lists all spreadsheets
+
+        :param parent_id: (optional) If specified filters spreadsheets by parent_id.
+
+        :returns: list of dictionaries with id and name for each spreadsheet
         """
-        return self._spreadsheeets
+        if not parent_id:
+            return self._spreadsheeets
+
+        request = self.driveService.files().list(corpora='teamDrive' if self.teamDriveId else 'user', pageSize=500,
+                                                 fields="files(id, name, parents)", teamDriveId=self.teamDriveId,
+                                                 q="mimeType='application/vnd.google-apps.spreadsheet'",
+                                                 supportsTeamDrives=self.enableTeamDriveSupport,
+                                                 includeTeamDriveItems=self.enableTeamDriveSupport)
+        results = self._execute_request(None, request, False)
+        try:
+            results = results['files']
+        except KeyError:
+            results = []
+
+        return [{'id': x['id'], 'name': x['name']} for x in results if parent_id in x.get('parents', [])]
 
     def add_permission(self, file_id, addr, role='reader', is_group=False, expirationTime=None):
         """
-        create/update permission for user/group/domain
+        create/update permission for user/group/domain/anyone
 
         :param file_id: id of the file whose permissions to manupulate
-        :param addr: this is the email for user/group and domain adress for domains
+        :param addr: email for user/group, domain address for domains or 'anyone'
         :param role: permission to be applied
         :param expirationTime: (Not Implimented) time until this permission should last
         :param is_group: boolean , Is this addr a group; used only when email provided
@@ -256,6 +288,11 @@ class Client(object):
             }
             if is_group:
                 permission['type'] = 'group'
+        elif addr == 'anyone':
+            permission = {
+                'type': 'anyone',
+                'role': role,
+            }
         else:
             permission = {
                 'type': 'domain',
@@ -417,17 +454,23 @@ class Client(object):
                 try:
                     response = request.execute()
                 except Exception as e:
-                    if str(e).find('timed out') == -1:
+                    if repr(e).find('timed out') == -1:
                         raise
                     if i == self.retries-1:
-                        raise RequestError("Timeout")
+                        raise RequestError("Timeout : " + repr(e))
                     # print ("Cant connect, retrying ... " + str(i))
                 else:
                     return response
 
     # @TODO combine adj batch requests into 1
     def send_batch(self, spreadsheet_id):
-        """Send all batched requests"""
+        """Send all batched requests
+        :param spreadsheet_id: id of ssheet batch requests to send
+        :return: False if no batched requests
+        """
+        if spreadsheet_id not in self.batch_requests or self.batch_requests == []:
+            return False
+
         def callback(request_id, response, exception):
             if exception:
                 print(exception)
@@ -439,12 +482,13 @@ class Client(object):
         for req in self.batch_requests[spreadsheet_id]:
             batch_req.add(req)
             i += 1
-            if i % 100 == 0: # as there is an limit of 100 requests
+            if i % 100 == 0:  # as there is an limit of 100 requests
                 i = 0
                 batch_req.execute()
                 batch_req = self.service.new_batch_http_request(callback=callback)
         batch_req.execute()
         self.batch_requests[spreadsheet_id] = []
+        return True
 
 
 def get_outh_credentials(client_secret_file, credential_dir=None, outh_nonlocal=False):
@@ -542,7 +586,6 @@ def authorize(outh_file='client_secret.json', outh_creds_store=None, outh_nonloc
         if service_file:
             with open(service_file) as data_file:
                 data = jload(data_file)
-                print('service_email : '+str(data['client_email']))
             credentials = ServiceAccountCredentials.from_json_keyfile_name(service_file, SCOPES)
         elif outh_file:
             credentials = get_outh_credentials(client_secret_file=outh_file, credential_dir=outh_creds_store,

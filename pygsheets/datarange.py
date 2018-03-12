@@ -4,9 +4,9 @@
 pygsheets.datarange
 ~~~~~~~~~~~~~~~~~~~
 
-This module contains DataRange class for storing/manuplating a range of data in spreadsheet. This classs can
-be used for group operations, eg changing format of ll cells in a given range. This can also represent, named ranges
-protetced ranegs, banned ranges etc.
+This module contains DataRange class for storing/manipulating a range of data in spreadsheet. This class can
+be used for group operations, e.g. changing format of all cells in a given range. This can also represent named ranges
+protected ranges, banned ranges etc.
 
 """
 
@@ -18,41 +18,49 @@ from .exceptions import InvalidArgumentValue, CellNotFound
 
 class DataRange(object):
     """
-    DataRange specifes a range of cells in the sheet
+    DataRange specifies a range of cells in the sheet
 
-    :param start: top left cell adress
-    :param end: bottom right cell adress
+    :param start: top left cell address
+    :param end: bottom right cell address
     :param worksheet: worksheet where this range belongs
     :param name: name of the named range
+    :param data: data of the range in as row major matrix
     :param name_id: id of named range
     :param namedjson: json representing the NamedRange from api
     """
-    def __init__(self, start=None, end=None, worksheet=None, name='', data=None, name_id=None, namedjson=None):
+
+    def __init__(self, start=None, end=None, worksheet=None, name='', data=None, name_id=None, namedjson=None, protect_id=None, protectedjson=None):
         self._worksheet = worksheet
         if namedjson:
             start = (namedjson['range'].get('startRowIndex', 0)+1, namedjson['range'].get('startColumnIndex', 0)+1)
-            # @TODO this wont scale if the sheet size is changed
+            # @TODO this won't scale if the sheet size is changed
             end = (namedjson['range'].get('endRowIndex', self._worksheet.cols),
                    namedjson['range'].get('endColumnIndex', self._worksheet.rows))
             name_id = namedjson['namedRangeId']
-        data = [[]]
+        if protectedjson:
+            start = (protectedjson['range'].get('startRowIndex', 0)+1, protectedjson['range'].get('startColumnIndex', 0)+1)
+            # @TODO this won't scale if the sheet size is changed
+            end = (protectedjson['range'].get('endRowIndex', self._worksheet.cols),
+                   protectedjson['range'].get('endColumnIndex', self._worksheet.rows))
+            protect_id = protectedjson['protectedRangeId']
         self._start_addr = format_addr(start, 'tuple')
         self._end_addr = format_addr(end, 'tuple')
         if data:
-            if len(data) != end[0] - start[0] + 1 or len(data[0]) != end[1] - start[1] + 1:
+            if len(data) == self._end_addr[0] - self._start_addr[0] + 1 and \
+                            len(data[0]) == self._end_addr[1] - self._start_addr[1] + 1:
                 self._data = data
         self._linked = True
 
         self._name_id = name_id
+        self._protect_id = protect_id
         self._name = name
 
-        self._protected = False
         self.protected_properties = ProtectedRange()
         self._banned = False
 
     @property
     def name(self):
-        """name of the named range, setting a name will make this a range a named range
+        """name of the named range. setting a name will make this a range a named range
             setting this to '' will delete the named range
         """
         return self._name
@@ -66,7 +74,7 @@ class DataRange(object):
             self._name = ''
         else:
             if self._name == '':
-                # @TODO hanlde when not linked (create an rnage on link)
+                # @TODO handle when not linked (create an range on link)
                 self._worksheet.create_named_range(name, start=self._start_addr, end=self._end_addr)
                 self._name = name
             else:
@@ -79,21 +87,26 @@ class DataRange(object):
         return self._name_id
 
     @property
-    def protect(self):
-        """ (boolean) if this range is protected"""
-        return self._protected
+    def protect_id(self):
+        return self._protect_id
 
-    # @TODO
-    @protect.setter
-    def protect(self, value):
+    @property
+    def protected(self):
+        """get/set range protection"""
+        return self._protect_id is not None
+
+    @protected.setter
+    def protected(self, value):
         if value:
-            self._worksheet.create_protected_range()
-        else:
-            self._worksheet.remove_protected_range()
+            resp = self._worksheet.create_protected_range(self._get_gridrange())
+            self._protect_id = resp['replies'][0]['addProtectedRange']['protectedRange']['protectedRangeId']
+        elif not self._protect_id is None:
+            self._worksheet.remove_protected_range(self._protect_id)
+            self._protect_id = None
 
     @property
     def start_addr(self):
-        """topleft adress of the range"""
+        """top-left address of the range"""
         return self._start_addr
 
     @start_addr.setter
@@ -104,7 +117,7 @@ class DataRange(object):
 
     @property
     def end_addr(self):
-        """bottomright adress of the range"""
+        """bottom-right address of the range"""
         return self._end_addr
 
     @end_addr.setter
@@ -122,8 +135,15 @@ class DataRange(object):
     def worksheet(self):
         return self._worksheet
 
+    @property
+    def cells(self):
+        """Get cells of this range"""
+        if len(self._data[0]) == 0:
+            self.fetch()
+        return self._data
+
     def link(self, update=True):
-        """link the dstarange so that all propertis are synced right after setting them
+        """link the datarange so that all properties are synced right after setting them
 
         :param update: if the range should be synced to cloud on link
         """
@@ -133,12 +153,12 @@ class DataRange(object):
             self.update_values()
 
     def unlink(self):
-        """unlink the sheet so that all properties are not synced as its changed"""
+        """unlink the sheet so that all properties are not synced as it is changed"""
         self._linked = False
 
     def fetch(self, only_data=True):
         """
-        update the range data/ properties from cloud
+        update the range data/properties from cloud
 
         :param only_data: fetch only data
 
@@ -147,7 +167,7 @@ class DataRange(object):
         if not only_data:
             pass
 
-    def applay_format(self, cell):
+    def apply_format(self, cell):
         """
         Change format of all cells in the range
 
@@ -157,7 +177,7 @@ class DataRange(object):
         request = {"repeatCell": {
             "range": self._get_gridrange(),
             "cell": cell.get_json(),
-            "fields": "*"
+            "fields": "userEnteredFormat,hyperlink,note,textFormatRuns,dataValidation,pivotTable"
             }
         }
         self._worksheet.client.sh_batch_update(self._worksheet.spreadsheet.id, request, None, False)
@@ -177,7 +197,7 @@ class DataRange(object):
 
     # @TODO
     def sort(self):
-        warnings.warn('Functionality not implimented')
+        warnings.warn('Functionality not implemented')
 
     def update_named_range(self):
         """update the named properties"""

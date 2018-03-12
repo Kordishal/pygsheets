@@ -10,6 +10,7 @@ This module contains worksheet model
 
 import datetime
 import re
+from io import open
 
 from .cell import Cell
 from .datarange import DataRange
@@ -71,6 +72,10 @@ class Worksheet(object):
             self.client.update_sheet_properties(self.spreadsheet.id, self.jsonSheet['properties'], 'title')
 
     @property
+    def url(self):
+        return self.spreadsheet.url+"/edit#gid="+str(self.id)
+
+    @property
     def rows(self):
         """Number of rows"""
         return int(self.jsonSheet['properties']['gridProperties']['rowCount'])
@@ -97,6 +102,30 @@ class Worksheet(object):
         if self._linked:
             self.client.update_sheet_properties(self.spreadsheet.id, self.jsonSheet['properties'],
                                                 'gridProperties/columnCount')
+
+    @property
+    def frozen_rows(self):
+        """Number of frozen rows"""
+        return self.jsonSheet['properties']['gridProperties'].get('frozenRowCount', 0)
+
+    @frozen_rows.setter
+    def frozen_rows(self, row_count):
+        self.jsonSheet['properties']['gridProperties']['frozenRowCount'] = int(row_count)
+        if self._linked:
+            self.client.update_sheet_properties(self.spreadsheet.id, self.jsonSheet['properties'],
+                                                'gridProperties/frozenRowCount')
+
+    @property
+    def frozen_cols(self):
+        """Number of frozen columns"""
+        return self.jsonSheet['properties']['gridProperties'].get('frozenColumnCount', 0)
+
+    @frozen_cols.setter
+    def frozen_cols(self, col_count):
+        self.jsonSheet['properties']['gridProperties']['frozenColumnCount'] = int(col_count)
+        if self._linked:
+            self.client.update_sheet_properties(self.spreadsheet.id, self.jsonSheet['properties'],
+                                                'gridProperties/frozenColumnCount')
 
     def refresh(self, update_grid=False):
         """refresh worksheet data"""
@@ -148,14 +177,24 @@ class Worksheet(object):
         """sync the worksheet to cloud"""
         self.link(True)
 
-    def _get_range(self, start_label, end_label=None):
+    def _get_range(self, start_label, end_label=None, rformat='A1'):
         """get range in A1 notation, given start and end labels
+
+        :param start_label: range start label
+        :param end_label: range end label
+        :param rformat: can be A1 or GridRange
 
         """
         if not end_label:
             end_label = start_label
-        return self.title + '!' + ('%s:%s' % (format_addr(start_label, 'label'),
-                                              format_addr(end_label, 'label')))
+        if rformat == "A1":
+            return self.title + '!' + ('%s:%s' % (format_addr(start_label, 'label'),
+                                                  format_addr(end_label, 'label')))
+        else:
+            start_tuple = format_addr(start_label, "tuple")
+            end_tuple = format_addr(end_label, "tuple")
+            return {"sheetId": self.id, "startRowIndex": start_tuple[0]-1, "endRowIndex": end_tuple[0],
+                    "startColumnIndex": start_tuple[1]-1, "endColumnIndex": end_tuple[1]}
 
     def cell(self, addr):
         """
@@ -198,7 +237,7 @@ class Worksheet(object):
         """
         startcell = crange.split(':')[0]
         endcell = crange.split(':')[1]
-        return self.get_values(startcell, endcell, returnas=returnas)
+        return self.get_values(startcell, endcell, returnas=returnas, include_all=True)
 
     def get_value(self, addr):
         """
@@ -224,9 +263,10 @@ class Worksheet(object):
                        takes - 'ROWS' or 'COLMUNS'
         :param returnas: return as list of strings of cell objects
                          takes - 'matrix', 'cell', 'range'
-        :param include_empty: include empty trailing cells/values until last non-zero value,
-                             ignored if inclue_all is True
-        :param include_all: include all the cells in the range empty/non-empty, will return exact rectangle
+        :param include_empty: include empty trailing cells/values until last non-zero value, wont fill completely empty
+                              rows ignored if inclue_all is True, this wont fill empty rows
+        :param include_all: include all the cells (even rows with no values) in the range empty/non-empty,
+                            will return exact rectangle
         :param value_render: format of output values
 
         Example:
@@ -244,43 +284,66 @@ class Worksheet(object):
         else:
             values = self.client.sh_get_ssheet(self.spreadsheet.id, fields='sheets/data/rowData', include_data=True,
                                                ranges=self._get_range(start, end))
-            values = values['sheets'][0]['data'][0]['rowData']
-            values = [x.get('values', []) for x in values]
+            values = values['sheets'][0]['data'][0].get('rowData', [])
+            if include_all:
+                values = [x.get('values', []) for x in values]
+            else:
+                values = [x.get('values', []) for x in values]
+                values = list(filter(lambda x: any('effectiveValue' in item for item in x), values))  # skip empty rows
             empty_value = dict()
 
+        if values == [['']] or values == []: values = [[]]
+
         start = format_addr(start, 'tuple')
+        end = format_addr(end, 'tuple')
         if include_all or returnas == 'range':
-            end = format_addr(end, 'tuple')
             max_cols = end[1] - start[1] + 1
             max_rows = end[0] - start[0] + 1
+            if majdim == "COLUMNS": max_cols, max_rows = max_rows, max_cols
             matrix = [list(x + [empty_value] * (max_cols - len(x))) for x in values]
             if max_rows > len(matrix):
                 matrix.extend([[empty_value]*max_cols]*(max_rows - len(matrix)))
-        elif include_empty:
-            max_cols = len(max(values, key=len))
-            matrix = [list(x + [empty_value] * (max_cols - len(x))) for x in values]
+        elif include_empty and len(values) > 0 and values != [[]]:
+            if returnas != "matrix":
+                matrix = list(filter(lambda x: any('effectiveValue' in item for item in x), values))  # skip empty rows
+                # @TODO issue here
+            else:
+                max_cols = end[1] - start[1] + 1 if majdim == "ROWS" else end[0] - start[0] + 1
+                matrix = [list(x + [empty_value] * (max_cols - len(x))) for x in values]
         else:
-            matrix = values
+            if returnas != "matrix":
+                matrix = list(filter(lambda x: any('effectiveValue' in item for item in x), values))  # skip empty rows
+                for i, row in enumerate(matrix):
+                    for j, cell in reversed(list(enumerate(row))):
+                        if 'effectiveValue' not in cell:
+                            del matrix[i][j]
+                        else:
+                            break
+            else:
+                matrix = values
+
+        if matrix == [[]]: return matrix
 
         if returnas == 'matrix':
             return matrix
         else:
-            cells = []
-            for k in range(len(matrix)):
-                row = []
-                for i in range(len(matrix[k])):
-                    if majdim == 'COLUMNS':
-                        row.append(Cell(pos=(start[0]+i, start[1]+k), worksheet=self, cell_data=matrix[k][i]))
-                    elif majdim == 'ROWS':
-                        row.append(Cell(pos=(start[0]+k, start[1]+i), worksheet=self, cell_data=matrix[k][i]))
-                    else:
-                        raise InvalidArgumentValue('majdim')
+            if majdim == "COLUMNS":
+                cells = [[] for x in range(len(matrix[0]))]
+                for k in range(len(matrix)):
+                    for i in range(len(matrix[k])):
+                        cells[i].append(Cell(pos=(start[0]+k, start[1]+i), worksheet=self, cell_data=matrix[k][i]))
+            elif majdim == 'ROWS':
+                cells = [[] for x in range(len(matrix))]
+                for k in range(len(matrix)):
+                    for i in range(len(matrix[k])):
+                        cells[k].append(Cell(pos=(start[0]+k, start[1]+i), worksheet=self, cell_data=matrix[k][i]))
+            else:
+                raise InvalidArgumentValue('majdim')
 
-                cells.append(row)
             if returnas.startswith('cell'):
                 return cells
             elif returnas == 'range':
-                return DataRange(start, end, worksheet=self, data=cells)
+                return DataRange(start, format_addr(end, 'label'), worksheet=self, data=cells)
 
     def get_all_values(self, returnas='matrix', majdim='ROWS', include_empty=True):
         """Returns a list of lists containing all cells' values as strings.
@@ -349,13 +412,31 @@ class Worksheet(object):
         return self.get_values((1, col), (self.rows, col), majdim='COLUMNS',
                                returnas=returnas, include_empty=include_empty)[0]
 
-    def update_cell(self, addr, val, parse=True):
+    def get_gridrange(self, start, end):
+        """
+        get a range in gridrange format
+
+        :param start: start adress
+        :param end: end adress
+        """
+        start = format_addr(start, "tuple")
+        end = format_addr(end, "tuple")
+        return {
+            "sheetId": self.id,
+            "startRowIndex": start[0]-1,
+            "endRowIndex": end[0],
+            "startColumnIndex": start[1]-1,
+            "endColumnIndex": end[1],
+        }
+
+    # @TODO change to update_value in next version
+    def update_cell(self, addr, val, parse=None):
         """Sets the new value to a cell.
 
         :param addr: cell address as tuple (row,column) or label 'A1'.
         :param val: New value
         :param parse: if False, values will be stored \
-                        as else as if the user typed them into the UI
+                        as is else as if the user typed them into the UI default is spreadsheet.default_parse
 
         Example:
 
@@ -369,18 +450,20 @@ class Worksheet(object):
         body['range'] = self._get_range(label, label)
         body['majorDimension'] = 'ROWS'
         body['values'] = [[val]]
+        parse = parse if parse is not None else self.spreadsheet.default_parse
         self.client.sh_update_range(self.spreadsheet.id, body, self.spreadsheet.batch_mode, parse)
 
-    def update_cells(self, crange=None, values=None, cell_list=None, extend=False, majordim='ROWS', parse=True):
-        """Updates cells in batch, it can take either a cell list or a range and values. cell list is only efficient
-        for large lists.
+    def update_cells(self, crange=None, values=None, cell_list=None, extend=False, majordim='ROWS', parse=None):
+        """Updates cell values in batch, it can take either a cell list or a range and values. cell list is only efficient
+        for large lists. This will only update the cell values not other properties.
 
         :param cell_list: List of a :class:`Cell` objects to update with their values
         :param crange: range in format A1:A2 or just 'A1' or even (1,2) end cell will be infered from values
         :param values: matrix of values if range given, if a value is None its unchanged
         :param extend: add columns and rows to the workspace if needed (not for cell list)
         :param majordim: major dimension of given data
-        :param parse: if the values should be as if the user typed them into the UI else its stored as is
+        :param parse: if the values should be as if the user typed them into the UI else its stored as is. default is
+                      spreadsheet.default_parse
         """
         if cell_list:
             values = [[None for x in range(self.cols)] for y in range(self.rows)]
@@ -397,6 +480,11 @@ class Worksheet(object):
                         raise CellNotFound(cell)
             values = [row[min_tuple[1]-1:max_tuple[1]] for row in values[min_tuple[0]-1:max_tuple[0]]]
             crange = str(format_addr(tuple(min_tuple))) + ':' + str(format_addr(tuple(max_tuple)))
+        elif crange and values:
+            if not isinstance(values, list) or not isinstance(values[0], list):
+                raise InvalidArgumentValue("values should be a matrix")
+        else:
+            raise InvalidArgumentValue("provide either cells or values, not both")
 
         body = dict()
         estimate_size = False
@@ -410,10 +498,11 @@ class Worksheet(object):
 
         if estimate_size:
             start_r_tuple = format_addr(crange, output='tuple')
+            max_2nd_dim = max(map(len, values))
             if majordim == 'ROWS':
-                end_r_tuple = (start_r_tuple[0]+len(values), start_r_tuple[1]+len(values[0]))
+                end_r_tuple = (start_r_tuple[0]+len(values), start_r_tuple[1]+max_2nd_dim)
             else:
-                end_r_tuple = (start_r_tuple[0] + len(values[0]), start_r_tuple[1] + len(values))
+                end_r_tuple = (start_r_tuple[0] + max_2nd_dim, start_r_tuple[1] + len(values))
             body['range'] = self._get_range(crange, format_addr(end_r_tuple))
         else:
             body['range'] = self._get_range(*crange.split(':'))
@@ -425,10 +514,26 @@ class Worksheet(object):
                 self.rows = end_r_tuple[0]-1
             if self.cols < end_r_tuple[1]:
                 self.cols = end_r_tuple[1]-1
-
         body['majorDimension'] = majordim
         body['values'] = values
+        parse = parse if parse is not None else self.spreadsheet.default_parse
         self.client.sh_update_range(self.spreadsheet.id, body, self.spreadsheet.batch_mode, parse=parse)
+
+    def update_cells_prop(self, cell_list, fields='*'):
+        """
+        update cell properties and data from a list of cell obejcts
+
+        :param cell_list: list of cell objects
+        :param fields: cell fields to update, in google FieldMask format(see api docs)
+
+        """
+        requests = []
+        for cell in cell_list:
+            request = cell.update(get_request=True, worksheet_id=self.id)
+            request['repeatCell']['fields'] = fields
+            requests.append(request)
+
+        self.client.sh_batch_update(self.spreadsheet.id, requests, None, True)
 
     def update_col(self, index, values, row_offset=0):
         """
@@ -556,17 +661,18 @@ class Worksheet(object):
         if values:
             self.update_row(row+1, values)
 
-    def clear(self, start='A1', end=None):
-        """clears the worksheet by default, if range given then clears range
+    def clear(self, start='A1', end=None, fields="userEnteredValue"):
+        """clears the worksheet values by default, if range given then clears range
 
         :param start: topright cell address
         :param end: bottom left cell of range
-
+        :param fields: comma seperated fields to clear; * for all fields, userEnteredFormat for only format etc.
+                       Please see google api docs for more
         """
         if not end:
             end = (self.rows, self.cols)
-        body = {'ranges': [self._get_range(start, end)]}
-        self.client.sh_batch_clear(self.spreadsheet.id, body)
+        request = {"updateCells": {"range": self._get_range(start, end, "GridRange"), "fields": fields}}
+        self.client.sh_batch_update(self.spreadsheet.id, request, batch=self.spreadsheet.batch_mode)
 
     def adjust_column_width(self, start, end=None, pixel_size=100):
         """Adjust the width of one or more columns
@@ -595,6 +701,87 @@ class Worksheet(object):
         },
 
         self.client.sh_batch_update(self.spreadsheet.id, request, batch=self.spreadsheet.batch_mode)
+
+    def update_dimensions_visibility(self, start, end=None, dimension="ROWS", hidden=True):
+        """Set visibility of dimensions
+
+        :param start: index of the dimension visibility to be changed
+        :param end: index of the end dimension that visibility will be changed
+        :param dimension: ('ROW' or 'COLUMN') dimension that visibility will be changed
+        :param hidden: hide dimension"""
+
+        if end is None or end <= start:
+            end = start + 1
+
+        request = {
+                      "updateDimensionProperties": {
+                          "range": {
+                              "sheetId": self.id,
+                              "dimension": dimension,
+                              "startIndex": start,
+                              "endIndex": end
+                          },
+                          "properties": {
+                              "hiddenByUser": hidden
+                          },
+                          "fields": "hiddenByUser"
+                      }
+                  },
+
+        self.client.sh_batch_update(self.spreadsheet.id, request, batch=self.spreadsheet.batch_mode)
+
+    def hide_dimensions(self, start, end=None, dimension="ROWS"):
+        """Hide dimensions
+
+        :param start: index of the dimension to be hidden
+        :param end: index of the end dimension that will be hidden
+        :param dimension: ('ROW' or 'COLUMN') dimension which will be hidden
+        """
+        self.update_dimensions_visibility(start, end, dimension, hidden=True)
+
+    def show_dimensions(self, start, end=None, dimension="ROWS"):
+        """Show dimensions
+
+        :param start: index of the dimension to be shown
+        :param end: index of the end dimension that will be shown
+        :param dimension: ('ROW' or 'COLUMN') dimension which will be shown
+        """
+        self.update_dimensions_visibility(start, end, dimension, hidden=False)
+
+    def hide_rows(self, start, end=None):
+        """Hide rows
+
+        :param start: index of the row to be hidden
+        :param end: index of the end row that will be hidden
+        """
+        self.hide_dimensions(start, end, "ROWS")
+
+    def show_rows(self, start, end=None):
+        """Show rows
+
+        :param start: index of the row to be shown
+        :param end: index of the end row that will be shown
+        """
+
+        self.show_dimensions(start, end, "ROWS")
+
+    def hide_columns(self, start, end=None):
+        """Hide columns
+
+        :param start: index of the column to be hidden
+        :param end: index of the end column that will be hidden
+        """
+
+        self.hide_dimensions(start, end, "COLUMNS")
+
+    def show_columns(self, start, end=None):
+        """Show columns
+
+        :param start: index of the column to be shown
+        :param end: index of the end column that will be shown
+        """
+
+        self.show_dimensions(start, end, "COLUMNS")
 
     def adjust_row_height(self, start, end=None, pixel_size=100):
         """Adjust the height of one or more rows
@@ -689,6 +876,22 @@ class Worksheet(object):
         self.client.sh_batch_update(self.spreadsheet.id, request, batch=self.spreadsheet.batch_mode)
         return DataRange(start, end, self, name)
 
+    def get_named_range(self, name):
+        """
+        get a named range given name
+
+        :param name: Name of the named range to be retrived, if omitted all ranges are retrived
+        :return: :class:`DataRange`
+
+        """
+        nrange = [x for x in self.spreadsheet.named_ranges if x.name == name and x.worksheet.id == self.id]
+        if len(nrange) == 0:
+            self.spreadsheet.update_properties()
+            nrange = [x for x in self.spreadsheet.named_ranges if x.name == name and x.worksheet.id == self.id]
+            if len(nrange) == 0:
+                raise RangeNotFound(name)
+        return nrange[0]
+
     def get_named_ranges(self, name=''):
         """
         get a named range given name
@@ -702,13 +905,7 @@ class Worksheet(object):
             nrange = [x for x in self.spreadsheet.named_ranges if x.worksheet.id == self.id]
             return nrange
         else:
-            nrange = [x for x in self.spreadsheet.named_ranges if x.name == name and x.worksheet.id == self.id]
-            if len(nrange) == 0:
-                self.spreadsheet.update_properties()
-                nrange = [x for x in self.spreadsheet.named_ranges if x.name == name and x.worksheet.id == self.id]
-                if len(nrange) == 0:
-                    raise RangeNotFound(name)
-            return nrange[0]
+            return self.get_named_range(name)
 
     def delete_named_range(self, name, range_id=''):
         """delete a named range
@@ -724,6 +921,24 @@ class Worksheet(object):
         }}
         self.client.sh_batch_update(self.spreadsheet.id, request, batch=self.spreadsheet.batch_mode)
         self.spreadsheet._named_ranges = [x for x in self.spreadsheet._named_ranges if x["namedRangeId"] != range_id]
+
+    def create_protected_range(self, gridrange):
+        """create protected range
+          :param gridrange: gridrange of cells to be protected"""
+        request = {"addProtectedRange": {
+            "protectedRange": {
+                "range": gridrange
+            },
+        }}
+        return self.client.sh_batch_update(self.spreadsheet.id, request, None, False)
+
+    def remove_protected_range(self, range_id):
+        """create protected range
+          :param range_id: id of protected range to be deleted"""
+        request = {"deleteProtectedRange": {
+            "protectedRangeId": range_id
+        }}
+        return self.client.sh_batch_update(self.spreadsheet.id, request, None, False)
 
     def set_dataframe(self, df, start, copy_index=False, copy_head=True, fit=False, escape_formulae=False, nan='NaN'):
         """
@@ -755,14 +970,20 @@ class Worksheet(object):
                 df_cols += 1
 
         if copy_head:
-            head = []
-            if isinstance(df.index, pd.MultiIndex) and copy_index:
-                head = [""] * len(df.index[0])
-            elif copy_index:
-                head = [""]
-            head.extend(df.columns.tolist())
-            values.insert(0, head)
-            df_rows += 1
+            # If multi index, copy indexes in each level to new row, colum/index names are not copied for now
+            if isinstance(df.index, pd.MultiIndex):
+                head = [""]*len(df.index[0]) if copy_index else []
+                heads = [head[:] for x in df.columns[0]]
+                for col_head in df.columns:
+                    for i, col_item in enumerate(col_head):
+                        heads[i].append(col_item)
+                values = heads + values
+                df_rows += len(df.columns[0])
+            else:
+                head = [""] if copy_index else []
+                head.extend(df.columns.tolist())
+                values.insert(0, head)
+                df_rows += 1
 
         end = format_addr(tuple([start[0]+df_rows, start[1]+df_cols]))
 
@@ -795,7 +1016,9 @@ class Worksheet(object):
         """
         if not pd:
             raise ImportError("pandas")
-        if start is not None and end is not None:
+        if start is not None or end is not None:
+            if end is None:
+                end = (self.rows, self.cols)
             values = self.get_values(start, end, include_empty=True)
         else:
             values = self.get_all_values(returnas='matrix', include_empty=True)
@@ -828,7 +1051,7 @@ class Worksheet(object):
             import csv
             ifilename = 'worksheet'+str(self.id)+'.csv' if filename is None else filename
             print (ifilename)
-            with open(ifilename, 'wt') as f:
+            with open(ifilename, 'wt', encoding="utf-8") as f:
                 writer = csv.writer(f, lineterminator="\n")
                 writer.writerows(self.get_all_values())
         elif isinstance(fformat, ExportType):

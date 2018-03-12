@@ -5,6 +5,7 @@ import pytest
 
 sys.path.append(path.dirname(path.dirname(path.abspath(__file__))))
 import pygsheets
+from pygsheets import Cell
 
 try:
     import ConfigParser
@@ -230,6 +231,24 @@ class TestWorkSheet(object):
         assert self.worksheet.cols == cols
         assert self.worksheet.rows == rows
 
+    def test_frozen_rows(self):
+        ws = self.worksheet
+        assert ws.frozen_rows == 0
+        ws.frozen_rows = 1
+        ws.refresh()
+        assert ws.frozen_rows == 1
+        ws.frozen_rows = 0
+        ws.refresh()
+
+    def test_frozen_cols(self):
+        ws = self.worksheet
+        assert ws.frozen_cols == 0
+        ws.frozen_cols = 2
+        ws.refresh()
+        assert ws.frozen_cols == 2
+        ws.frozen_cols = 0
+        ws.refresh()
+
     def test_addr_reformat(self):
         addr = pygsheets.format_addr((1, 1))
         assert addr == 'A1'
@@ -270,7 +289,6 @@ class TestWorkSheet(object):
     def test_update_cells(self):
         self.worksheet.update_cells(crange='A1:B2', values=[[1, 2], [3, 4]])
         assert self.worksheet.cell((1, 1)).value == str(1)
-
         self.worksheet.resize(1, 1)
         self.worksheet.update_cells(crange='A1', values=[[1, 2, 5], [3, 4, 6], [3, 4, 61]], extend=True)
         assert self.worksheet.cols == 3
@@ -319,19 +337,21 @@ class TestWorkSheet(object):
     def test_clear(self):
         self.worksheet.update_cell('S10', 100)
         self.worksheet.clear()
-        assert self.worksheet.get_value
+        assert self.worksheet.get_all_values() == [[]]
 
     def test_delete_dimension(self):
         rows = self.worksheet.rows
         self.worksheet.update_row(10, [1, 2, 3, 4, 5])
         self.worksheet.delete_rows(10)
-        assert self.worksheet.get_value((9, 2)) != 2
+        with pytest.raises(IndexError):
+            assert self.worksheet.get_value((9, 2)) != 2
         assert self.worksheet.rows == rows - 1
 
         cols = self.worksheet.cols
         self.worksheet.update_col(10, [1, 2, 3, 4, 5])
         self.worksheet.delete_cols(10)
-        assert self.worksheet.get_value((10, 2)) != 2
+        with pytest.raises(IndexError):
+            assert self.worksheet.get_value((10, 2)) != 2
         assert self.worksheet.cols == cols - 1
 
     # @TODO
@@ -355,6 +375,20 @@ class TestWorkSheet(object):
         assert self.worksheet.get_value('B2') == '1'
         assert self.worksheet.get_value('C2') == '4'
 
+        # Test MultiIndex
+        import numpy as np
+        arrays = [np.array(['bar', 'bar', 'baz', 'baz', 'foo', 'foo', 'qux', 'qux']),
+                  np.array(['one', 'two', 'one', 'two', 'one', 'two', 'one', 'two'])]
+        tuples = list(zip(*arrays))
+        index = pd.MultiIndex.from_tuples(tuples, names=['first', 'second'])
+        df = pd.DataFrame(np.random.randn(8, 8), index=index, columns=index)
+        self.worksheet.set_dataframe(df, 'A1', copy_index=True)
+        assert self.worksheet.get_value('C1') == 'bar'
+        assert self.worksheet.get_value('C2') == 'one'
+        assert self.worksheet.get_value('F1') == 'baz'
+        assert self.worksheet.get_value('F2') == 'two'
+        self.worksheet.clear()
+
     # @TODO
     def test_get_as_df(self):
         assert True
@@ -362,6 +396,64 @@ class TestWorkSheet(object):
     # @TODO
     def test_export(self):
         assert True
+
+    def test_get_values(self):
+        self.worksheet.resize(10, 10)
+        self.worksheet.clear()
+        self.worksheet.update_cells('A1:C2', [[1, 2, ''], [2, 3, 4]])
+        assert self.worksheet.get_values('A1', 'E5') == [[u'1', u'2', '', '', ''], [u'2', u'3', u'4', '', '']]
+
+        # @TODO not working
+        # assert self.worksheet.get_values('A1','D3', returnas="cells") == [[Cell('A1', '1'), Cell('B1','2'), Cell('C1',''), Cell('D1','')],
+        #                                                                   [Cell('A2','2'), Cell('B2','3'), Cell('C2','4'), Cell('D2','')]]
+
+        assert self.worksheet.get_values('A1','D3', returnas="cells", include_empty=False) == [[Cell('A1', '1'), Cell('B1','2') ],
+                                                                          [Cell('A2','2'), Cell('B2','3'), Cell('C2','4')]]
+        assert self.worksheet.get_values('D1', 'D3', returnas="cells", include_all=True) == [[Cell('D1', '')], [Cell('D2', '')], [Cell('D3', '')]]
+
+    def test_hide_rows(self):
+        self.worksheet.hide_rows(0, 2)
+        json =self.spreadsheet.client.sh_get_ssheet(self.spreadsheet.id, fields="sheets/data/rowMetadata/hiddenByUser")
+        assert json['sheets'][0]['data'][0]['rowMetadata'][0]['hiddenByUser'] == True
+        assert json['sheets'][0]['data'][0]['rowMetadata'][1]['hiddenByUser'] == True
+        self.worksheet.show_rows(0, 2)
+        json =self.spreadsheet.client.sh_get_ssheet(self.spreadsheet.id, fields="sheets/data/rowMetadata/hiddenByUser")
+        assert json['sheets'][0]['data'][0]['rowMetadata'][0].get('hiddenByUser', False) == False
+        assert json['sheets'][0]['data'][0]['rowMetadata'][1].get('hiddenByUser', False) == False
+
+    def test_hide_columns(self):
+        self.worksheet.hide_columns(0, 2)
+        json = self.spreadsheet.client.sh_get_ssheet(self.spreadsheet.id, fields="sheets/data/columnMetadata/hiddenByUser")
+        assert json['sheets'][0]['data'][0]['columnMetadata'][0]['hiddenByUser'] == True
+        assert json['sheets'][0]['data'][0]['columnMetadata'][1]['hiddenByUser'] == True
+        self.worksheet.show_columns(0, 2)
+        json =self.spreadsheet.client.sh_get_ssheet(self.spreadsheet.id, fields="sheets/data/columnMetadata/hiddenByUser")
+        assert json['sheets'][0]['data'][0]['columnMetadata'][0].get('hiddenByUser', False) == False
+        assert json['sheets'][0]['data'][0]['columnMetadata'][1].get('hiddenByUser', False) == False
+
+
+# @pytest.mark.skip()
+class TestDataRange(object):
+    def setup_class(self):
+        title = config.get('Spreadsheet', 'title')
+        self.spreadsheet = gc.create(title)
+        self.worksheet = self.spreadsheet.worksheet()
+        self.range = self.worksheet.range("A1:A2", returnas="range")
+
+    def teardown_class(self):
+        title = config.get('Spreadsheet', 'title')
+        gc.delete(title=title)
+
+    def test_protected_range(self):
+        self.range.protected = True
+        assert self.range.protected
+        assert self.range.protect_id is not None
+        assert self.range is not None
+        assert len(self.spreadsheet.protected_ranges) == 1
+        self.range.protected = False
+        assert not self.range.protected
+        assert self.range.protect_id is None
+        assert len(self.spreadsheet.protected_ranges) == 0
 
 
 # @pytest.mark.skip()
@@ -425,3 +517,10 @@ class TestCell(object):
         cell.link()
         cell.update()
         assert self.worksheet.get_value('A1') == '20'
+
+    def test_wrap_strategy(self):
+        cell = self.worksheet.get_values('A1', 'A1', returnas="range")[0][0]
+        assert cell.wrap_strategy == "WRAP_STRATEGY_UNSPECIFIED"
+        cell.wrap_strategy = "WRAP"
+        cell = self.worksheet.get_values('A1', 'A1', returnas="range")[0][0]
+        assert cell.wrap_strategy == "WRAP"

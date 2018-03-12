@@ -8,7 +8,6 @@ This module contains cell model
 
 """
 
-# import warnings
 from .custom_types import *
 from .exceptions import (IncorrectCellLabel, CellNotFound, InvalidArgumentValue)
 from .utils import format_addr
@@ -53,6 +52,7 @@ class Cell(object):
         """border properties as json, see gsheets api docs"""
         self.parse_value = True
         """if set false, value will be shown as it is set"""
+        self._wrap_strategy = "WRAP_STRATEGY_UNSPECIFIED"
 
         if cell_data:
             self.set_json(cell_data)
@@ -111,6 +111,9 @@ class Cell(object):
             self._worksheet.update_cell(self.label, value, self.parse_value)
             if not self._simplecell:  # for unformated value and formula
                 self.fetch()
+        else:
+            self._formula = value if str(value).startswith('=') else ''
+            self._unformated_value = ''
 
     @property
     def value_unformatted(self):
@@ -187,7 +190,7 @@ class Cell(object):
 
         :param attribute: one of the following "foregroundColor" "fontFamily", "fontSize", "bold", "italic",
                             "strikethrough", "underline"
-        :param value: corresponding value for the attribute
+        :param value: corresponding value for the attribute, please see google api docs for value formats
         :return: :class: Cell
         """
         if self._simplecell:
@@ -246,6 +249,18 @@ class Cell(object):
             raise InvalidArgumentValue("alignment")
         self.update()
         return self
+
+    @property
+    def wrap_strategy(self):
+        """get/set cell wrap strategy as one of the following strings: 'WRAP_STRATEGY_UNSPECIFIED', 'OVERFLOW_CELL',
+        'LEGACY_WRAP', 'CLIP', 'WRAP'. See
+        https://developers.google.com/sheets/api/reference/rest/v4/spreadsheets#wrapstrategy"""
+        return self._wrap_strategy
+
+    @wrap_strategy.setter
+    def wrap_strategy(self, wrap_strategy):
+        self._wrap_strategy = wrap_strategy
+        self.update()
 
     def unlink(self):
         """unlink the cell from worksheet. Unliked cells wont updated if any properties are changed.
@@ -316,30 +331,35 @@ class Cell(object):
         else:
             return False
 
-    def update(self, force=False):
+    def update(self, force=False, get_request=False, worksheet_id=None):
         """
         update the sheet cell value with the attributes set
 
         :param force: update the cell even if its unlinked
-         """
-        if not self._linked and not force:
+        :param get_request: return the request object
+        :param worksheet_id: worksheet id to be used in case of unlinked cell
+
+        """
+        if not (self._linked or force) and not get_request:
             return False
         self._simplecell = False
+        worksheet_id = worksheet_id if worksheet_id is not None else self._worksheet.id
         request = {
             "repeatCell": {
                 "range": {
-                    "sheetId": self._worksheet.id,
+                    "sheetId": worksheet_id,
                     "startRowIndex": self.row - 1,
                     "endRowIndex": self.row,
                     "startColumnIndex": self.col - 1,
                     "endColumnIndex": self.col
                 },
                 "cell": self.get_json(),
-                "fields": "userEnteredFormat, note"
+                "fields": "userEnteredFormat, note, userEnteredValue"
             }
         }
+        if get_request:
+            return request
         self._worksheet.client.sh_batch_update(self._worksheet.spreadsheet.id, request, None, False)
-        self.value = self._value  # @TODO combine to above?
 
     def get_json(self):
         """get the json representation of the cell as per google api"""
@@ -347,6 +367,19 @@ class Cell(object):
             nformat, pattern = self.format
         except TypeError:
             nformat, pattern = self.format, ""
+        if self._formula != '':
+            value = self._formula
+            value_key = 'formulaValue'
+        elif type(self._value) is str:
+            value = self._value
+            value_key = 'stringValue'
+        elif type(self._value) is bool:
+            value = self._value
+            value_key = 'boolValue'
+        else:   # @TODO errorValue key not handled
+            value = self._value
+            value_key = 'numberValue'
+
         return {"userEnteredFormat": {
                         "numberFormat": {
                             "type": getattr(nformat, 'value', nformat),
@@ -362,7 +395,11 @@ class Cell(object):
                         "borders": self.borders,
                         "textRotation": self.text_rotation,
                         "horizontalAlignment": self.horizondal_alignment,
-                        "verticalAlignment": self.vertical_alignment
+                        "verticalAlignment": self.vertical_alignment,
+                        "wrapStrategy":  self._wrap_strategy
+                    },
+                "userEnteredValue": {
+                        value_key: value
                     },
                 "note": self._note,
                 }
@@ -374,13 +411,13 @@ class Cell(object):
         :param cell_data: json data about cell
 
         """
-
         self._value = cell_data.get('formattedValue', '')
         try:
             self._unformated_value = list(cell_data['effectiveValue'].values())[0]
         except KeyError:
             self._unformated_value = ''
         self._formula = cell_data.get('userEnteredValue', {}).get('formulaValue', '')
+
         self._note = cell_data.get('note', '')
         nformat = cell_data.get('userEnteredFormat', {}).get('numberFormat', {})
         self.format = (nformat.get('type', FormatType.CUSTOM), nformat.get('pattern', ''))
@@ -390,6 +427,7 @@ class Cell(object):
         self.text_format = cell_data.get('userEnteredFormat', {}).get('textFormat', {})
         self.text_rotation = cell_data.get('userEnteredFormat', {}).get('textRotation', {})
         self.borders = cell_data.get('userEnteredFormat', {}).get('borders', {})
+        self._wrap_strategy = cell_data.get('userEnteredFormat', {}).get('wrapStrategy', 'WRAP_STRATEGY_UNSPECIFIED')
 
     def __eq__(self, other):
         if self._worksheet is not None and other._worksheet is not None:
@@ -400,8 +438,4 @@ class Cell(object):
         return True
 
     def __repr__(self):
-        return '<%s R%sC%s %s>' % (self.__class__.__name__,
-                                   self.row,
-                                   self.col,
-                                   repr(self.value))
-
+        return '<%s %s %s>' % (self.__class__.__name__, self.label, repr(self.value))

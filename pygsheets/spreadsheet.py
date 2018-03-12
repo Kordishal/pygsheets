@@ -21,6 +21,8 @@ class Spreadsheet(object):
 
     """ A class for a spreadsheet object."""
 
+    worksheet_cls = Worksheet
+
     def __init__(self, client, jsonsheet=None, id=None):
         """ spreadsheet init.
 
@@ -39,6 +41,7 @@ class Spreadsheet(object):
         self.update_properties(jsonsheet)
         self._permissions = dict()
         self.batch_mode = False
+        self.default_parse = True
 
     @property
     def id(self):
@@ -56,10 +59,24 @@ class Spreadsheet(object):
         return self.worksheet()
 
     @property
+    def url(self):
+        """Url of the spreadsheet"""
+        return "https://docs.google.com/spreadsheets/d/"+self.id
+
+    @property
     def named_ranges(self):
-        """All named ranges in thi spreadsheet"""
+        """All named ranges in this spreadsheet"""
         return [DataRange(namedjson=x, name=x['name'], worksheet=self.worksheet('id', x['range'].get('sheetId', 0)))
                 for x in self._named_ranges]
+
+    @property
+    def protected_ranges(self):
+        """All protected ranges in this spreadsheet"""
+        request = self.client.service.spreadsheets().get(spreadsheetId=self.id, fields="sheets/(properties/sheetId,protectedRanges)", includeGridData=True)
+        response = self.client._execute_request(self.id, request, False)
+        return [DataRange(protectedjson=x, worksheet=self.worksheet('id', sheet['properties']['sheetId']))
+                for sheet in response['sheets']
+                for x in sheet.get('protectedRanges', [])]
 
     @property
     def defaultformat(self):
@@ -101,7 +118,7 @@ class Spreadsheet(object):
         if not jsonsheet:
             jsonsheet = self.client.open_by_key(self.id, returnas='json')
         for sheet in jsonsheet.get('sheets'):
-            self._sheet_list.append(Worksheet(self, sheet))
+            self._sheet_list.append(self.worksheet_cls(self, sheet))
 
     def worksheets(self, sheet_property=None, value=None, force_fetch=False):
         """
@@ -158,7 +175,7 @@ class Spreadsheet(object):
         """
         return self.worksheet('title', title)
 
-    def add_worksheet(self, title, rows=100, cols=26, src_tuple=None, src_worksheet=None):
+    def add_worksheet(self, title, rows=100, cols=26, src_tuple=None, src_worksheet=None, index=None):
         """Adds a new worksheet to a spreadsheet.
 
         :param title: A title of a new worksheet.
@@ -166,6 +183,7 @@ class Spreadsheet(object):
         :param cols: Number of columns.
         :param src_tuple: a tuple (spreadsheet id, worksheet id) specifying a worksheet to copy
         :param src_worksheet: source worksheet object to copy values from
+        :param index: worksheet position
 
         :returns: a newly created :class:`worksheets <Worksheet>`.
         """
@@ -175,19 +193,21 @@ class Spreadsheet(object):
         jsheet = dict()
         if src_tuple:
             jsheet['properties'] = self.client.sh_copy_worksheet(src_tuple[0], src_tuple[1], self.id)
-            wks = Worksheet(self, jsheet)
+            wks = self.worksheet_cls(self, jsheet)
             wks.title = title
         elif src_worksheet:
             if type(src_worksheet) != Worksheet:
                 raise InvalidArgumentValue("src_worksheet")
             jsheet['properties'] = self.client.sh_copy_worksheet(src_worksheet.spreadsheet.id, src_worksheet.id, self.id)
-            wks = Worksheet(self, jsheet)
+            wks = self.worksheet_cls(self, jsheet)
             wks.title = title
         else:
             request = {"addSheet": {"properties": {'title': title, "gridProperties": {"rowCount": rows, "columnCount": cols}}}}
+            if index is not None:
+                request["addSheet"]["properties"]["index"] = index
             result = self.client.sh_batch_update(self.id, request, 'replies/addSheet', False)
             jsheet['properties'] = result['replies'][0]['addSheet']['properties']
-            wks = Worksheet(self, jsheet)
+            wks = self.worksheet_cls(self, jsheet)
         self._sheet_list.append(wks)
         return wks
 
@@ -239,13 +259,13 @@ class Spreadsheet(object):
         body = {'findReplace': body}
         response = self.client.sh_batch_update(self.id, request=body, batch=self.batch_mode)
         return response['replies'][0]['findReplace']
-    
+
     # @TODO impliment expiration time
     def share(self, addr, role='reader', expirationTime=None, is_group=False):
         """
-        create/update permission for user/group/domain
+        create/update permission for user/group/domain/anyone
 
-        :param addr: this is the email for user/group and domain address for domains
+        :param addr: email for user/group, domain address for domains or 'anyone'
         :param role: permission to be applied ('owner','writer','commenter','reader')
         :param expirationTime: (Not Implimented) time until this permission should last (datetime)
         :param is_group: boolean , Is this a use/group used only when email provided

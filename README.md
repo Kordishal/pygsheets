@@ -115,6 +115,9 @@ gc.teamDriveId = "Dqd3A65c8hsxOpqdfdggPR0fgfg"
 # create a new sheet with 50 rows and 60 colums
 wks = sh.add_worksheet("new sheet",rows=50,cols=60)
 
+# create a new sheet with 50 rows and 60 colums at the begin of worksheets
+wks = sh.add_worksheet("new sheet",rows=50,cols=60,index=0)
+
 # or copy from another worksheet
 wks = sh.add_worksheet("new sheet", src_worksheet=another_wks)
 
@@ -191,6 +194,7 @@ wks.title = "NewTitle"
 
 # working with named ranges
 wks.create_named_range('A1', 'A10', 'prices')
+wks.get_named_range('prices')
 wks.get_named_ranges()  # will return a list of DataRange objects
 wks.delete_named_range('prices')
 
@@ -301,7 +305,7 @@ model_cell.color = (1.0,0,1.0,1.0) # rose color cell
 model_cell.format = pygsheets.FormatType.PERCENT
 
  # now set its format to all cells in the range
-rng.applay_format(model_cell)  # will make all cell in this range rose color and percent format
+rng.apply_format(model_cell)  # will make all cell in this range rose color and percent format
 
 # get cells in range
 cell = rng[0][1]
@@ -314,7 +318,9 @@ cell = rng[0][1]
 This library is still in development phase. So there is a lot of work to be done. Checkout the [TO DO's](TODO.md).
  
 * Follow the [Contributing to Open Source](https://guides.github.com/activities/contributing-to-open-source/) Guide.
-* Please Create Pull Requests to the `staging` branch
+* Branch off of the `staging` branch, and submit Pull Requests back to
+  that branch.  Note that the `master` branch is used for version
+  bumps and hotfixes only.
 
 ### Report Issues/Features
 
