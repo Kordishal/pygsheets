@@ -437,9 +437,7 @@ class Cell(object):
                     "type": getattr(nformat, 'value', nformat),
                     "pattern": pattern
                 },
-                "backgroundColor": {
-                    self._color.to_json()
-                },
+                "backgroundColor": self._color.to_json(),
                 "textFormat": self.text_format,
                 "borders": self.borders,
                 "textRotation": self.text_rotation,
