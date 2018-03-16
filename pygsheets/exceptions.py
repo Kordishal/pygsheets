@@ -55,3 +55,7 @@ class InvalidArgumentValue(PyGsheetsException):
 
 class InvalidUser(PyGsheetsException):
     """Invalid user/domain"""
+
+
+class InvalidColorRangeError(PyGsheetsException):
+    """The color value is not in [0, 1]"""
