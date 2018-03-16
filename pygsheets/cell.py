@@ -11,6 +11,7 @@ This module represents a cell within the worksheet.
 from .custom_types import *
 from .exceptions import (IncorrectCellLabel, CellNotFound, InvalidArgumentValue)
 from .utils import format_addr, is_number
+from .helpers.color import Color
 
 
 class Cell(object):
@@ -40,7 +41,7 @@ class Cell(object):
             self._linked = False
         else:
             self._linked = True
-        self._color = (1.0, 1.0, 1.0, 1.0)
+        self._color = Color.WHITE()
         self._simplecell = True  # if format, notes etc wont be fetched on each update
         self.format = (FormatType.CUSTOM, '')
         """Format of this cell. Either as tuple (FormatType.Custom, pattern) or a specific FormatType."""
@@ -158,24 +159,25 @@ class Cell(object):
 
     @property
     def color(self):
-        """Get/Set background color of this cell as a tuple (red, green, blue, alpha)."""
+        """Background color of this cell.
+
+        Get as :class:`<Color>`.
+        Set as tuple (red, green, blue, alpha), dict {'red': 0.5, ... } or :class:`<Color>` object.
+        """
         if self._simplecell:
             self.fetch()
         return self._color
 
     @color.setter
     def color(self, value):
-        if self._simplecell:
-            self.fetch()
-        if type(value) is tuple:
-            if len(value) < 4:
-                value = list(value) + [1.0]*(4-len(value))
+        if isinstance(value, tuple):
+            self._color = Color(*value)
+        elif isinstance(value, dict):
+            self._color = Color(**value)
+        elif isinstance(value, Color):
+            self._color = value
         else:
-            value = (value, 1.0, 1.0, 1.0)
-        for c in value:
-            if c < 0 or c > 1:
-                raise InvalidArgumentValue("Color should be in range 0-1")
-        self._color = tuple(value)
+            raise InvalidArgumentValue('Set color as tuple, dict or :class:`<Color>`.')
         self.update()
 
     @property
@@ -436,10 +438,7 @@ class Cell(object):
                     "pattern": pattern
                 },
                 "backgroundColor": {
-                    "red": self._color[0],
-                    "green": self._color[1],
-                    "blue": self._color[2],
-                    "alpha": self._color[3],
+                    self._color.to_json()
                 },
                 "textFormat": self.text_format,
                 "borders": self.borders,
@@ -472,7 +471,7 @@ class Cell(object):
         self.format = (nformat.get('type', FormatType.CUSTOM), nformat.get('pattern', ''))
         color = cell_data.get('userEnteredFormat', {}) \
             .get('backgroundColor', {'red': 1.0, 'green': 1.0, 'blue': 1.0, 'alpha': 1.0})
-        self._color = (color.get('red', 0), color.get('green', 0), color.get('blue', 0), color.get('alpha', 0))
+        self._color = Color.from_json(color)
         self.text_format = cell_data.get('userEnteredFormat', {}).get('textFormat', {})
         self.text_rotation = cell_data.get('userEnteredFormat', {}).get('textRotation', {})
         self.borders = cell_data.get('userEnteredFormat', {}).get('borders', {})

@@ -9,7 +9,7 @@ class Color(abc.MutableMapping):
     def from_json(cls, source):
         if isinstance(source, str):
             source = json.loads(source)
-        return cls(**source)
+        return cls(source.get('red', 1.0), source.get('green', 1.0), source.get('blue', 1.0), source.get('alpha', 1.0))
 
     def __init__(self, red, green, blue, alpha=1):
         if not (self._check_range(red) and self._check_range(green)
