@@ -11,7 +11,7 @@ class Color(abc.MutableMapping):
             source = json.loads(source)
         return cls(source.get('red', 1.0), source.get('green', 1.0), source.get('blue', 1.0), source.get('alpha', 1.0))
 
-    def __init__(self, red, green, blue, alpha=1):
+    def __init__(self, red, green, blue, alpha=1.0):
         if not (self._check_range(red) and self._check_range(green)
                 and self._check_range(blue) and self._check_range(alpha)):
             raise InvalidColorRangeError('A color or alpha value is not in range [0, 1]: R:%d; G:%d; B:%d; A:%d.' %
