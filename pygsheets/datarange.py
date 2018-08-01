@@ -9,8 +9,6 @@ be used for group operations, e.g. changing format of all cells in a given range
 protected ranges, banned ranges etc.
 
 """
-
-from pygsheets.utils import format_addr
 from pygsheets.exceptions import InvalidArgumentValue, CellNotFound, IncorrectCellLabel
 
 import warnings
@@ -81,6 +79,12 @@ class Address(object):
         else:
             raise IncorrectCellLabel('Not a valid cell label format: {}.'.format(label))
         return int(row), int(col)
+
+    def __repr__(self):
+        return self.label
+
+    def __str__(self):
+        return self.label
 
     def __iter__(self):
         return self._value
@@ -210,7 +214,7 @@ class DataRange(object):
     @property
     def range(self):
         """Range in format A1:C5"""
-        return '{}:{}'.format(self._start_address.label, self._end_address.label)
+        return '{}:{}'.format(self._start_address, self._end_address)
 
     @property
     def worksheet(self):

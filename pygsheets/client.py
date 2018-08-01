@@ -14,7 +14,6 @@ from pygsheets.exceptions import (AuthenticationError, SpreadsheetNotFound,
                                   NoValidUrlKeyFound, RequestError,
                                   InvalidArgumentValue)
 from pygsheets.custom_types import *
-from pygsheets.utils import format_addr
 
 import httplib2
 from json import load as jload

@@ -14,9 +14,9 @@ from io import open
 import logging
 
 from pygsheets.cell import Cell
-from pygsheets.datarange import DataRange
+from pygsheets.datarange import DataRange, Address
 from pygsheets.exceptions import (CellNotFound, InvalidArgumentValue, RangeNotFound)
-from pygsheets.utils import numericise_all, format_addr, fullmatch
+from pygsheets.utils import numericise_all, fullmatch
 from pygsheets.custom_types import *
 try:
     import pandas as pd
@@ -217,11 +217,10 @@ class Worksheet(object):
         if not end_label:
             end_label = start_label
         if rformat == "A1":
-            return self.title + '!' + ('%s:%s' % (format_addr(start_label, 'label'),
-                                                  format_addr(end_label, 'label')))
+            return '{}!{}:{}'.format(self.title, Address(start_label), Address(end_label))
         else:
-            start_tuple = format_addr(start_label, "tuple")
-            end_tuple = format_addr(end_label, "tuple")
+            start_tuple = Address(start_label)
+            end_tuple = Address(end_label)
             return {"sheetId": self.id, "startRowIndex": start_tuple[0]-1, "endRowIndex": end_tuple[0],
                     "startColumnIndex": start_tuple[1]-1, "endColumnIndex": end_tuple[1]}
 
@@ -247,7 +246,7 @@ class Worksheet(object):
             if type(addr) is str:
                 val = self.client.get_range(self.spreadsheet.id, self._get_range(addr, addr), 'ROWS')[0][0]
             elif type(addr) is tuple:
-                label = format_addr(addr, 'label')
+                label = Address(addr)
                 val = self.client.get_range(self.spreadsheet.id, self._get_range(label, label), 'ROWS')[0][0]
             else:
                 raise CellNotFound
@@ -277,7 +276,7 @@ class Worksheet(object):
         :param addr: cell address as either tuple or label
 
         """
-        addr = format_addr(addr, 'tuple')
+        addr = Address(addr)
         try:
             return self.get_values(addr, addr, include_tailing_empty=False)[0][0]
         except KeyError:
@@ -339,8 +338,8 @@ class Worksheet(object):
         if values == [['']] or values == []: values = [[]]
 
         # cleanup and re-structure the values
-        start = format_addr(start, 'tuple')
-        end = format_addr(end, 'tuple')
+        start = Address(start)
+        end = Address(end)
 
         max_rows = end[0] - start[0] + 1
         max_cols = end[1] - start[1] + 1
@@ -399,7 +398,7 @@ class Worksheet(object):
             if returnas.startswith('cell'):
                 return cells
             elif returnas == 'range':
-                return DataRange(start, format_addr(end, 'label'), worksheet=self, data=cells)
+                return DataRange(start, end, worksheet=self, data=cells)
 
     def get_all_values(self, returnas='matrix', majdim='ROWS', include_tailing_empty=True, include_empty_rows=True,
                        value_render=ValueRenderOption.FORMATTED_VALUE):
@@ -500,7 +499,7 @@ class Worksheet(object):
         """
         if not self._linked: return False
 
-        label = format_addr(addr, 'label')
+        label = Address(addr)
         body = dict()
         body['range'] = self._get_range(label, label)
         body['majorDimension'] = 'ROWS'
@@ -535,8 +534,8 @@ class Worksheet(object):
                     values[cell.row-1][cell.col-1] = cell.value
                 except IndexError:
                         raise CellNotFound(cell)
-            values = [row[min_tuple[1]-1:max_tuple[1]] for row in values[min_tuple[0]-1:max_tuple[0]]]
-            crange = str(format_addr(tuple(min_tuple))) + ':' + str(format_addr(tuple(max_tuple)))
+            values = [row[min_tuple[1] - 1:max_tuple[1]] for row in values[min_tuple[0] - 1:max_tuple[0]]]
+            crange =  '{}:{}'.format(str(Address(tuple(min_tuple))), str(Address(tuple(max_tuple))))
         elif crange and values:
             if not isinstance(values, list) or not isinstance(values[0], list):
                 raise InvalidArgumentValue("values should be a matrix")
@@ -554,19 +553,19 @@ class Worksheet(object):
             raise InvalidArgumentValue('crange')
 
         if estimate_size:
-            start_r_tuple = format_addr(crange, output='tuple')
+            start_r_tuple = Address(crange)
             max_2nd_dim = max(map(len, values))
             if majordim == 'ROWS':
-                end_r_tuple = (start_r_tuple[0]+len(values), start_r_tuple[1]+max_2nd_dim)
+                end_r_tuple = (start_r_tuple[0] + len(values), start_r_tuple[1] + max_2nd_dim)
             else:
                 end_r_tuple = (start_r_tuple[0] + max_2nd_dim, start_r_tuple[1] + len(values))
-            body['range'] = self._get_range(crange, format_addr(end_r_tuple))
+            body['range'] = self._get_range(crange, Address(end_r_tuple))
         else:
             body['range'] = self._get_range(*crange.split(':'))
 
         if extend:
             self.refresh()
-            end_r_tuple = format_addr(str(body['range']).split(':')[-1])
+            end_r_tuple = Address(str(body['range']).split(':')[-1])
             if self.rows < end_r_tuple[0]:
                 self.rows = end_r_tuple[0]-1
             if self.cols < end_r_tuple[1]:
@@ -610,8 +609,8 @@ class Worksheet(object):
 
         if type(values[0]) is not list:
             values = [values]
-        colrange = format_addr((row_offset+1, index), 'label') + ":" + format_addr((row_offset+len(values[0]),
-                                                                                   index+len(values)-1), "label")
+        colrange = "{}:{}".format(Address((row_offset + 1, index)),
+                                  Address((row_offset + len(values[0]), index + len(values) - 1)))
         self.update_values(crange=colrange, values=values, majordim='COLUMNS')
 
     def update_row(self, index, values, col_offset=0):
@@ -626,8 +625,8 @@ class Worksheet(object):
 
         if type(values[0]) is not list:
             values = [values]
-        colrange = format_addr((index, col_offset+1), 'label') + ':' + format_addr((index+len(values)-1,
-                                                                                    col_offset+len(values[0])), 'label')
+        colrange = '{}:{}'.format(Address((index, col_offset + 1)),
+                                  Address((index + len(values) - 1, col_offset + len(values[0]))))
         self.update_values(crange=colrange, values=values, majordim='ROWS')
 
     def resize(self, rows=None, cols=None):
@@ -1024,8 +1023,8 @@ class Worksheet(object):
         """
         if not self._linked: return False
 
-        start = format_addr(start, 'tuple')
-        end = format_addr(end, 'tuple')
+        start = Address(start)
+        end = Address(end)
         request = {"addNamedRange": {
             "namedRange": {
                 "name": name,
@@ -1143,7 +1142,7 @@ class Worksheet(object):
         """
         if not self._linked: return False
 
-        start = format_addr(start, 'tuple')
+        start = Address(start)
         df = df.replace(pd.np.nan, nan)
         values = df.values.tolist()
         (df_rows, df_cols) = df.shape
@@ -1175,7 +1174,7 @@ class Worksheet(object):
                 values.insert(0, head)
                 df_rows += 1
 
-        end = format_addr(tuple([start[0]+df_rows, start[1]+df_cols]))
+        end = Address(tuple([start[0]+df_rows, start[1]+df_cols]))
 
         if fit:
             self.cols = start[1] - 1 + df_cols
@@ -1187,7 +1186,7 @@ class Worksheet(object):
                 for i in range(len(row)):
                     if type(row[i]) == str and row[i].startswith('='):
                         row[i] = "'" + str(row[i])
-        crange = format_addr(start) + ':' + end
+        crange = '{}:{}'.format(Address(start), end)
         self.update_values(crange=crange, values=values)
 
     def get_as_df(self, has_header=True, index_colum=None, start=None, end=None, numerize=True,

@@ -7,10 +7,10 @@ pygsheets.cell
 This module represents a cell within the worksheet.
 
 """
-
+from pygsheets.datarange import Address
 from pygsheets.custom_types import *
 from pygsheets.exceptions import (IncorrectCellLabel, CellNotFound, InvalidArgumentValue)
-from pygsheets.utils import format_addr, is_number
+from pygsheets.utils import is_number
 
 
 class Cell(object):
@@ -28,10 +28,7 @@ class Cell(object):
 
     def __init__(self, pos, val='', worksheet=None, cell_data=None):
         self._worksheet = worksheet
-        if type(pos) == str:
-            pos = format_addr(pos, 'tuple')
-        self._row, self._col = pos
-        self._label = format_addr(pos, 'label')
+        self._address = Address(pos)
         self._value = val  # formatted value
         self._unformated_value = val  # un-formatted value
         self._formula = ''
@@ -63,35 +60,33 @@ class Cell(object):
     @property
     def row(self):
         """Row number of the cell."""
-        return self._row
+        return self._address[0]
 
     @row.setter
     def row(self, row):
         if self._linked:
-            ncell = self._worksheet.cell((row, self.col))
+            ncell = self._worksheet.cell((row, self._address[1]))
             self.__dict__.update(ncell.__dict__)
         else:
-            self._row = row
-            self._label = format_addr((self._row, self._col), 'label')
+            self._address = Address((row, self._address[1]))
 
     @property
     def col(self):
         """Column number of the cell."""
-        return self._col
+        return self._address[1]
 
     @col.setter
     def col(self, col):
         if self._linked:
-            ncell = self._worksheet.cell((self._row, col))
+            ncell = self._worksheet.cell((self._address[0], col))
             self.__dict__.update(ncell.__dict__)
         else:
-            self._col = col
-            self._label = format_addr((self._row, self._col), 'label')
+            self._address = Address((self._address[0], col))
 
     @property
     def label(self):
         """This cells label (e.g. 'A1')."""
-        return self._label
+        return self._address.label
 
     @label.setter
     def label(self, label):
@@ -99,8 +94,7 @@ class Cell(object):
             ncell = self._worksheet.cell(label)
             self.__dict__.update(ncell.__dict__)
         else:
-            self._label = label
-            self._row, self._col = format_addr(label, 'tuple')
+            self._address = Address(label)
 
     @property
     def value(self):

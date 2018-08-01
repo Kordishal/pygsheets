@@ -1,5 +1,5 @@
 from pygsheets.spreadsheet import Spreadsheet
-from pygsheets.utils import format_addr
+from pygsheets.datarange import Address
 from pygsheets.exceptions import InvalidArgumentValue
 from pygsheets.custom_types import ValueRenderOption, DateTimeRenderOption
 
@@ -276,8 +276,8 @@ class SheetAPIWrapper(object):
             values = body['values']
             title, value_range = body['range'].split('!')
             value_range_start, value_range_end = value_range.split(':')
-            value_range_end = list(format_addr(str(value_range_end), output='tuple'))
-            value_range_start = list(format_addr(str(value_range_start), output='tuple'))
+            value_range_end = list(Address(str(value_range_end)))
+            value_range_start = list(Address(str(value_range_start)))
             max_rows = value_range_end[0]
             start_row = value_range_start[0]
             for batch_start in range(0, num_rows, batch_length):
@@ -287,8 +287,8 @@ class SheetAPIWrapper(object):
                     body['values'] = [col[batch_start:batch_start + batch_length] for col in values]
                 value_range_start[0] = batch_start + start_row
                 value_range_end[0] = min(batch_start + batch_length, max_rows) + start_row
-                body['range'] = title + '!' + format_addr(tuple(value_range_start), output='label') + ':' + \
-                                format_addr(tuple(value_range_end), output='label')
+                body['range'] = '{}!{}:{}'.format(title, Address(tuple(value_range_start)),
+                                                  Address(tuple(value_range_end)))
                 request = self.service.spreadsheets().values().update(spreadsheetId=spreadsheet_id, body=body,
                                                                       range=body['range'],
                                                                       valueInputOption=cformat)
