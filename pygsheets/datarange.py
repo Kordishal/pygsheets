@@ -100,6 +100,11 @@ class Address(object):
 
 
 class Range(object):
+    """A range in a google sheet.
+
+    :param start:   The start of the range (either as tuple, A1 notation or pygsheets.Address object.
+    :param end:     The end of the range (either as tuple, A1 notation or pygsheets.Address object.
+    """
 
     def __init__(self, start, end):
         self._start_address = Address(start)
@@ -107,14 +112,17 @@ class Range(object):
 
     @property
     def start(self):
+        """Top left address of this range."""
         return self._start_address
 
     @property
     def end(self):
+        """Bottom right address of this range."""
         return self._end_address
 
     @property
     def range(self):
+        """The range in A1 notation: 'A1:B7'"""
         return self.__repr__()
 
     def __repr__(self):
@@ -160,11 +168,22 @@ class ValueRange(GridRange, Iterable, Sequence):
 
     @property
     def major_dimension(self):
+        """The major dimension of this value range. When changed, the values are reordered accordingly."""
         return self._major_dimension
 
     @major_dimension.setter
     def major_dimension(self, value):
-        pass
+        if isinstance(value, Dimension):
+            value = value.value
+        if self._major_dimension.name != value:
+            self._major_dimension = Dimension[value]
+            new_values = list()
+            for i in range(len(self._values[0])):
+                dimension = list()
+                for item in self._values:
+                    dimension.append(item[i])
+                new_values.append(dimension)
+            self._values = new_values
 
     @property
     def value_render_option(self):
@@ -219,6 +238,9 @@ class ValueRange(GridRange, Iterable, Sequence):
 
     def __getitem__(self, item):
         return self._values[item]
+
+    def __repr__(self):
+        return '<{} "{}">'.format(self.__class__.__name__, self.range)
 
 
 class DataRange(GridRange):
