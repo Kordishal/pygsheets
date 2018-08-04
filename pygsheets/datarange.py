@@ -143,6 +143,10 @@ class GridRange(Range):
     def worksheet(self):
         return self._sheet
 
+    @property
+    def grid_range(self):
+        return self.to_json()
+
     def to_json(self):
         return {
             'sheetId': self.worksheet_id,
@@ -475,8 +479,39 @@ class DataRange(GridRange):
 
         return '<%s %s %s%s>' % (self.__class__.__name__, str(self._name), range_str, protected_str)
 
+
 class NamedRange(DataRange):
-    pass
+
+    def __init__(self, name, worksheet, start, end):
+        super().__init__(worksheet, start, end)
+        self._name = name
+        self._id = None
+        self.load()
+
+    @property
+    def id(self):
+        return self._id
+
+    @property
+    def name(self):
+        return self._name
+
+    @name.setter
+    def name(self, value):
+        self._name = value
+
+    def to_json(self):
+        return {
+            "namedRangeId": self._id,
+            "name": self._name,
+            "range": self.grid_range
+        }
+
+    def save(self):
+        pass
+
+    def load(self):
+        pass
 
 
 class ProtectedRange(DataRange):

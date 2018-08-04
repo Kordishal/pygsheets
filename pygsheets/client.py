@@ -11,13 +11,11 @@ from pygsheets.drive import DriveAPIWrapper
 from pygsheets.sheet import SheetAPIWrapper
 from pygsheets.spreadsheet import Spreadsheet
 from pygsheets.exceptions import (AuthenticationError, SpreadsheetNotFound,
-                                  NoValidUrlKeyFound, RequestError,
-                                  InvalidArgumentValue)
+                                  NoValidUrlKeyFound)
 from pygsheets.custom_types import *
 
 import httplib2
 from json import load as jload
-from googleapiclient import discovery
 from oauth2client.file import Storage
 from oauth2client import client
 from oauth2client import tools
