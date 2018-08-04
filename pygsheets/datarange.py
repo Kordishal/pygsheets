@@ -9,10 +9,10 @@ be used for group operations, e.g. changing format of all cells in a given range
 protected ranges, banned ranges etc.
 
 """
-from pygsheets.exceptions import InvalidArgumentValue, CellNotFound, IncorrectCellLabel
+from pygsheets.exceptions import InvalidArgumentValue, CellNotFound, IncorrectCellLabel, InvalidRange
 from pygsheets.custom_types import DateTimeRenderOption, ValueRenderOption, Dimension, ValueInputOption
 
-from collections.abc import Iterable, Sequence
+from collections.abc import Sequence
 import warnings
 import re
 
@@ -39,7 +39,7 @@ class Address(object):
             self._value = self._label_to_coordinates(value)
         elif isinstance(value, tuple):
             if value[0] < 1 or value[1] < 1:
-                raise InvalidArgumentValue('Address coordinates may not be below zero: ' + repr(self._value))
+                raise InvalidArgumentValue('Address coordinates may not be below zero: ' + repr(value))
             self._value = value
         elif isinstance(value, Address):
             self._value = self._label_to_coordinates(value.label)
@@ -86,29 +86,37 @@ class Address(object):
     def __repr__(self):
         return self.label
 
-    def __str__(self):
-        return self.label
-
     def __iter__(self):
-        return self._value
+        return iter(self._value)
 
     def __getitem__(self, item):
         return self._value[item]
 
     def __eq__(self, other):
-        return self.label == other.label
+        if isinstance(other, Address):
+            return self.label == other.label
+        else:
+            return NotImplemented
+
+    def __ne__(self, other):
+        result = self.__eq__(other)
+        if result is NotImplemented:
+            return result
+        return not result
 
 
 class Range(object):
     """A range in a google sheet.
 
-    :param start:   The start of the range (either as tuple, A1 notation or pygsheets.Address object.
-    :param end:     The end of the range (either as tuple, A1 notation or pygsheets.Address object.
+    :param start:   The start of the range (either as tuple, A1 notation or pygsheets.Address object.)
+    :param end:     The end of the range (either as tuple, A1 notation or pygsheets.Address object.)
     """
 
     def __init__(self, start, end):
         self._start_address = Address(start)
         self._end_address = Address(end)
+        if self._start_address[0] > self._end_address[0] or self._start_address[1] > self._end_address[1]:
+            raise InvalidRange('Cannot define a range with the start address after the end address: {}'.format(self.range))
 
     @property
     def start(self):
@@ -128,6 +136,18 @@ class Range(object):
     def __repr__(self):
         return '{}:{}'.format(self.start.label, self.end.label)
 
+    def __eq__(self, other):
+        if isinstance(other, Range):
+            return self.range == other.range
+        else:
+            return NotImplemented
+
+    def __ne__(self, other):
+        result = self.__eq__(other)
+        if result is NotImplemented:
+            return result
+        return not result
+
 
 class GridRange(Range):
 
@@ -137,17 +157,21 @@ class GridRange(Range):
 
     @property
     def worksheet_id(self):
+        """The id of the worksheet this grid range is part of."""
         return self._sheet.id
 
     @property
     def worksheet(self):
+        """The worksheet this grid range is part of."""
         return self._sheet
 
     @property
     def grid_range(self):
+        """The grid range as Google Sheets API JSON object."""
         return self.to_json()
 
     def to_json(self):
+        """The grid range as Google Sheets API JSON object."""
         return {
             'sheetId': self.worksheet_id,
             'startRowIndex': self.start[0],
@@ -157,10 +181,11 @@ class GridRange(Range):
         }
 
     def __repr__(self):
-        return '{}!{}:{}'.format(self.worksheet_id, self.start.label, self.end.label)
+        """The grid range in A1 notation."""
+        return '{}!{}:{}'.format(self.worksheet.title, self.start.label, self.end.label)
 
 
-class ValueRange(GridRange, Iterable, Sequence):
+class ValueRange(GridRange, Sequence):
 
     def __init__(self, worksheet, start, end, major_dimension=Dimension.ROWS):
         super().__init__(worksheet, start, end)
@@ -232,7 +257,16 @@ class ValueRange(GridRange, Iterable, Sequence):
         self._values = response['values']
 
     def __eq__(self, other):
-        return self.range == other.range and self.worksheet.spreadsheet.id == other.worksheet.spreadsheet.id
+        if isinstance(other, ValueRange):
+            return self.range == other.range and self.worksheet.spreadsheet.id == other.worksheet.spreadsheet.id
+        else:
+            return NotImplemented
+
+    def __ne__(self, other):
+        result = self.__eq__(other)
+        if result is NotImplemented:
+            return result
+        return not result
 
     def __iter__(self):
         return self._values

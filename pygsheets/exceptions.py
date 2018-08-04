@@ -59,3 +59,7 @@ class InvalidUser(PyGsheetsException):
 
 class CannotRemoveOwnerError(PyGsheetsException):
     """A owner permission cannot be removed if is the last one."""
+
+
+class InvalidRange(PyGsheetsException):
+    """An invalid range has been defined."""
