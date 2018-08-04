@@ -14,7 +14,7 @@ from io import open
 import logging
 
 from pygsheets.cell import Cell
-from pygsheets.datarange import DataRange, Address
+from pygsheets.datarange import DataRange, Address, GridRange, Range
 from pygsheets.exceptions import (CellNotFound, InvalidArgumentValue, RangeNotFound)
 from pygsheets.utils import numericise_all, fullmatch
 from pygsheets.custom_types import *
@@ -216,13 +216,11 @@ class Worksheet(object):
         """
         if not end_label:
             end_label = start_label
+        grid = GridRange(self, start_label, end_label)
         if rformat == "A1":
-            return '{}!{}:{}'.format(self.title, Address(start_label), Address(end_label))
+            return str(grid)
         else:
-            start_tuple = Address(start_label)
-            end_tuple = Address(end_label)
-            return {"sheetId": self.id, "startRowIndex": start_tuple[0]-1, "endRowIndex": end_tuple[0],
-                    "startColumnIndex": start_tuple[1]-1, "endColumnIndex": end_tuple[1]}
+            return grid.to_json()
 
     def cell(self, addr):
         """

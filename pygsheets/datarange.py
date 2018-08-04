@@ -177,7 +177,7 @@ class GridRange(Range):
             'startRowIndex': self.start[0],
             'endRowIndex': self.end[0] + 1,
             'startColumnIndex': self.start[1],
-            'endColumnIndex': self.end[0]
+            'endColumnIndex': self.end[1] + 1
         }
 
     def __repr__(self):

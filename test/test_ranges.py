@@ -1,6 +1,6 @@
 import pytest
 
-from pygsheets.datarange import Address, Range, GridRange
+from pygsheets.datarange import Address, Range
 from pygsheets.exceptions import IncorrectCellLabel, InvalidRange, InvalidArgumentValue
 
 
