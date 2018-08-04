@@ -37,7 +37,7 @@ class Address(object):
             self._value = self._label_to_coordinates(value)
         elif isinstance(value, tuple):
             if value[0] < 1 or value[1] < 1:
-                raise InvalidArgumentValue('Address coordinates may not be below zero: ' + repr(self._value))
+                raise InvalidArgumentValue('Address coordinates may not be below zero: ' + repr(value))
             self._value = value
         elif isinstance(value, Address):
             self._value = self._label_to_coordinates(value.label)
@@ -84,18 +84,23 @@ class Address(object):
     def __repr__(self):
         return self.label
 
-    def __str__(self):
-        return self.label
-
     def __iter__(self):
-        return self._value
+        return iter(self._value)
 
     def __getitem__(self, item):
         return self._value[item]
 
     def __eq__(self, other):
-        return self.label == other.label
+        if isinstance(other, Address):
+            return self.label == other.label
+        else:
+            return NotImplemented
 
+    def __ne__(self, other):
+        result = self.__eq__(other)
+        if result is NotImplemented:
+            return result
+        return not result
 
 class DataRange(object):
     """
