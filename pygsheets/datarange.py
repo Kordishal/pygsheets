@@ -10,7 +10,9 @@ protected ranges, banned ranges etc.
 
 """
 from pygsheets.exceptions import InvalidArgumentValue, CellNotFound, IncorrectCellLabel
+from pygsheets.custom_types import DateTimeRenderOption, ValueRenderOption, Dimension, ValueInputOption
 
+from collections.abc import Iterable, Sequence
 import warnings
 import re
 
@@ -97,7 +99,129 @@ class Address(object):
         return self.label == other.label
 
 
-class DataRange(object):
+class Range(object):
+
+    def __init__(self, start, end):
+        self._start_address = Address(start)
+        self._end_address = Address(end)
+
+    @property
+    def start(self):
+        return self._start_address
+
+    @property
+    def end(self):
+        return self._end_address
+
+    @property
+    def range(self):
+        return self.__repr__()
+
+    def __repr__(self):
+        return '{}:{}'.format(self.start.label, self.end.label)
+
+
+class GridRange(Range):
+
+    def __init__(self, worksheet, start, end):
+        super().__init__(start, end)
+        self._sheet = worksheet
+
+    @property
+    def worksheet_id(self):
+        return self._sheet.id
+
+    @property
+    def worksheet(self):
+        return self._sheet
+
+    def to_json(self):
+        return {
+            'sheetId': self.worksheet_id,
+            'startRowIndex': self.start[0],
+            'endRowIndex': self.end[0] + 1,
+            'startColumnIndex': self.start[1],
+            'endColumnIndex': self.end[0]
+        }
+
+    def __repr__(self):
+        return '{}!{}:{}'.format(self.worksheet_id, self.start.label, self.end.label)
+
+
+class ValueRange(GridRange, Iterable, Sequence):
+
+    def __init__(self, worksheet, start, end, major_dimension=Dimension.ROWS):
+        super().__init__(worksheet, start, end)
+        self._major_dimension = major_dimension
+        self._value_render_option = ValueRenderOption.FORMATTED_VALUE
+        self._date_time_render_option = DateTimeRenderOption.FORMATTED_STRING
+        self._values = None
+        self.load()
+
+    @property
+    def major_dimension(self):
+        return self._major_dimension
+
+    @major_dimension.setter
+    def major_dimension(self, value):
+        pass
+
+    @property
+    def value_render_option(self):
+        return self._value_render_option
+
+    @value_render_option.setter
+    def value_render_option(self, value):
+        self._value_render_option = value
+
+    @property
+    def date_time_render_option(self):
+        return self._date_time_render_option
+
+    @date_time_render_option.setter
+    def date_time_render_option(self, value):
+        self._date_time_render_option = value
+
+    def to_json(self):
+        return {
+            'range': self.range,
+            'majorDimension': self.major_dimension.value,
+            'values': self._values
+        }
+
+    def save(self, value_input_option=ValueInputOption.USER_ENTERED, include_values_in_response=False):
+        """Saves all values in the spreadsheet."""
+        return self.worksheet.client.sheet.values_update(self.worksheet.spreadsheet.id,
+                                                         self.range,
+                                                         self.to_json(),
+                                                         value_input_option,
+                                                         include_values_in_response,
+                                                         response_value_render_option=self.value_render_option,
+                                                         response_date_time_render_option=self.date_time_render_option)
+
+    def load(self):
+        """Loads all values from spreadsheet. Careful: this will overwrite unsaved changes."""
+        response = self.worksheet.client.sheet.values_get(self.worksheet.spreadsheet.id,
+                                                          self.range,
+                                                          self.major_dimension,
+                                                          self.value_render_option,
+                                                          self.date_time_render_option)
+        self._values = response['values']
+
+    def __eq__(self, other):
+        return self.range == other.range and self.worksheet.spreadsheet.id == other.worksheet.spreadsheet.id
+
+    def __iter__(self):
+        return self._values
+
+    def __len__(self):
+        return sum([len(v) for v in self._values])
+
+    def __getitem__(self, item):
+        return self._values[item]
+
+
+class DataRange(GridRange):
     """
     DataRange specifies a range of cells in the sheet
 
@@ -329,8 +453,11 @@ class DataRange(object):
 
         return '<%s %s %s%s>' % (self.__class__.__name__, str(self._name), range_str, protected_str)
 
+class NamedRange(DataRange):
+    pass
 
-class ProtectedRange(object):
+
+class ProtectedRange(DataRange):
 
     def __init__(self):
         self._protected_id = None
