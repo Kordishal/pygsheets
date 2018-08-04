@@ -42,7 +42,8 @@ class Address(object):
         elif isinstance(value, Address):
             self._value = self._label_to_coordinates(value.label)
         else:
-            raise IncorrectCellLabel('Only labels in A1 notation or coordinates as a tuple are accepted.')
+            raise IncorrectCellLabel('Only labels in A1 notation, coordinates as a tuple or '
+                                     'pygsheets.Address objects are accepted.')
 
     @property
     def label(self):
