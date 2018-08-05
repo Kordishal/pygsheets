@@ -12,9 +12,8 @@ import logging
 import warnings
 
 from pygsheets.worksheet import Worksheet
-from pygsheets.datarange import DataRange
-from pygsheets.exceptions import (WorksheetNotFound, RequestError,
-                         InvalidArgumentValue, InvalidUser)
+from pygsheets.datarange import DataRange, NamedRange
+from pygsheets.exceptions import WorksheetNotFound, InvalidArgumentValue
 from pygsheets.custom_types import *
 
 
@@ -38,7 +37,7 @@ class Spreadsheet(object):
         self._jsonsheet = jsonsheet
         self._id = id
         self._title = ''
-        self._named_ranges = []
+        self._named_ranges = None
         self.update_properties(jsonsheet)
         self.batch_mode = False
         self.default_parse = True
@@ -65,9 +64,8 @@ class Spreadsheet(object):
 
     @property
     def named_ranges(self):
-        """All named ranges in this spreadsheet."""
-        return [DataRange(namedjson=x, name=x['name'], worksheet=self.worksheet('id', x['range'].get('sheetId', 0)))
-                for x in self._named_ranges]
+        """Named ranges of this spreadsheet as dictionary, with the names as keys."""
+        return self._named_ranges
 
     @property
     def protected_ranges(self):
@@ -109,7 +107,10 @@ class Spreadsheet(object):
         self._title = self._jsonsheet['properties']['title']
         self._defaultFormat = self._jsonsheet['properties']['defaultFormat']
         self.client.spreadsheetId = self._id
-        self._named_ranges = self._jsonsheet.get('namedRanges', [])
+        named_ranges = [NamedRange.from_json(spreadsheet=self, **named_range) for named_range in self._jsonsheet.get('namedRanges', [])]
+        self._named_ranges = dict()
+        for named_range in named_ranges:
+            self._named_ranges[named_range.name] = named_range
 
     def _fetch_sheets(self, jsonsheet=None):
         """Update the sheets stored in this spreadsheet."""

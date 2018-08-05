@@ -40,3 +40,16 @@ class TestGridRange(object):
 
     def test_repr(self):
         assert self.grid_range.__repr__() == 'Sheet1!A5:B10'
+
+
+class TestNamedRanges(object):
+
+    def setup_class(self):
+        c = pygsheets.authorize()
+        ss = c.create('grid_range_test_sheet')
+        self.wks = ss.sheet1
+        self.wks.add_named_range('test_range', 'A1', 'B7')
+        self.named_range = self.wks.spreadsheet.named_ranges['test_range']
+
+    def test_name(self):
+        assert self.named_range == 'test_range'

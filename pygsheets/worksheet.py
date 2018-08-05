@@ -14,7 +14,7 @@ from io import open
 import logging
 
 from pygsheets.cell import Cell
-from pygsheets.datarange import DataRange, Address, GridRange, Range
+from pygsheets.datarange import DataRange, Address, GridRange, NamedRange, Range
 from pygsheets.exceptions import (CellNotFound, InvalidArgumentValue, RangeNotFound)
 from pygsheets.utils import numericise_all, fullmatch
 from pygsheets.custom_types import *
@@ -1008,90 +1008,25 @@ class Worksheet(object):
         else:  # if not searchByRegex and not matchEntireCell and not matchCase
             return list(filter(lambda x: False if x.value.lower().find(pattern) == -1 else True, found_cells))
 
-    # @TODO optimize with unlink
-    def create_named_range(self, name, start, end):
+    def add_named_range(self, name, start, end):
         """Create a new named range in this worksheet.
 
-        Reference: https://developers.google.com/sheets/api/reference/rest/v4/spreadsheets#namedrange
-
-        :param name:    Name of the range.
-        :param start:   Top left cell address (label or coordinates)
-        :param end:     Bottom right cell address (label or coordinates)
-        :returns :class:`DataRange`
+        :param name:    Name for this range.
+        :param start:   Top left cell address (label, coordinates or Address)
+        :param end:     Bottom right cell address (label, coordinates or Address)
+        :returns        :class:`NamedRange`
         """
-        if not self._linked: return False
+        named_range = NamedRange(name, self, start, end)
+        self.spreadsheet.named_ranges[named_range.name] = named_range
+        return named_range
 
-        start = Address(start)
-        end = Address(end)
-        request = {"addNamedRange": {
-            "namedRange": {
-                "name": name,
-                "range": {
-                    "sheetId": self.id,
-                    "startRowIndex": start[0]-1,
-                    "endRowIndex": end[0],
-                    "startColumnIndex": start[1]-1,
-                    "endColumnIndex": end[1],
-                }
-            }}}
-        self.client.sheet.batch_update(self.spreadsheet.id, request)
-        return DataRange(start, end, self, name)
-
-    def get_named_range(self, name):
+    def named_range(self, name):
         """Get a named range by name.
 
-        Reference: https://developers.google.com/sheets/api/reference/rest/v4/spreadsheets#namedrange
-
-        :param name:    Name of the named range to be retrieved.
-        :returns: :class:`DataRange`
-
-        :raises RangeNotFound: if no range matched the name given.
+        :param name:    Name of the named range.
+        :return:        :class:`NamedRange`
         """
-        if not self._linked: return False
-
-        nrange = [x for x in self.spreadsheet.named_ranges if x.name == name and x.worksheet.id == self.id]
-        if len(nrange) == 0:
-            self.spreadsheet.update_properties()
-            nrange = [x for x in self.spreadsheet.named_ranges if x.name == name and x.worksheet.id == self.id]
-            if len(nrange) == 0:
-                raise RangeNotFound(name)
-        return nrange[0]
-
-    def get_named_ranges(self, name=''):
-        """Get named ranges from this worksheet.
-
-        Reference: https://developers.google.com/sheets/api/reference/rest/v4/spreadsheets#namedrange
-
-        :param name:    Name of the named range to be retrieved, if omitted all ranges are retrieved.
-        :return: :class:`DataRange`
-        """
-        if not self._linked: return False
-
-        if name == '':
-            self.spreadsheet.update_properties()
-            nrange = [x for x in self.spreadsheet.named_ranges if x.worksheet.id == self.id]
-            return nrange
-        else:
-            return self.get_named_range(name)
-
-    def delete_named_range(self, name, range_id=''):
-        """Delete a named range.
-
-        Reference: https://developers.google.com/sheets/api/reference/rest/v4/spreadsheets#namedrange
-
-        :param name:        Name of the range.
-        :param range_id:    Id of the range (optional)
-
-        """
-        if not self._linked: return False
-
-        if not range_id:
-            range_id = self.get_named_ranges(name=name).name_id
-        request = {'deleteNamedRange': {
-            "namedRangeId": range_id,
-        }}
-        self.client.sheet.batch_update(self.spreadsheet.id, request)
-        self.spreadsheet._named_ranges = [x for x in self.spreadsheet._named_ranges if x["namedRangeId"] != range_id]
+        return self.spreadsheet.named_ranges[name]
 
     def create_protected_range(self, gridrange):
         """Create protected range.
@@ -1106,20 +1041,6 @@ class Worksheet(object):
             "protectedRange": {
                 "range": gridrange
             },
-        }}
-        return self.client.sheet.batch_update(self.spreadsheet.id, request)
-
-    def remove_protected_range(self, range_id):
-        """Remove protected range.
-
-        Reference: https://developers.google.com/sheets/api/reference/rest/v4/spreadsheets#protectedrange
-
-        :param range_id:    ID of the protected range.
-        """
-        if not self._linked: return False
-
-        request = {"deleteProtectedRange": {
-            "protectedRangeId": range_id
         }}
         return self.client.sheet.batch_update(self.spreadsheet.id, request)
 

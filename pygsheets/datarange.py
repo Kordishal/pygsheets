@@ -9,7 +9,8 @@ be used for group operations, e.g. changing format of all cells in a given range
 protected ranges, banned ranges etc.
 
 """
-from pygsheets.exceptions import InvalidArgumentValue, CellNotFound, IncorrectCellLabel, InvalidRange
+from pygsheets.exceptions import InvalidArgumentValue, CellNotFound, IncorrectCellLabel, InvalidRange, \
+    NoPermission
 from pygsheets.custom_types import DateTimeRenderOption, ValueRenderOption, Dimension, ValueInputOption
 
 from collections.abc import Sequence
@@ -133,6 +134,11 @@ class Range(object):
         """The range in A1 notation: 'A1:B7'"""
         return self.__repr__()
 
+    def change_range(self, start, end):
+        """Change the start and end of this range."""
+        self._start_address = Address(start)
+        self._end_address = Address(end)
+
     def __repr__(self):
         return '{}:{}'.format(self.start.label, self.end.label)
 
@@ -150,6 +156,11 @@ class Range(object):
 
 
 class GridRange(Range):
+
+    @classmethod
+    def from_json(cls, worksheet, sheetId, startRowIndex, endRowIndex, startColumnIndex, endColumnIndex):
+        """"""
+        return cls(worksheet, Address((startRowIndex, endRowIndex)), Address((startColumnIndex, endColumnIndex)))
 
     def __init__(self, worksheet, start, end):
         super().__init__(start, end)
@@ -515,12 +526,37 @@ class DataRange(GridRange):
 
 
 class NamedRange(DataRange):
+    """A named range is used to access a range of cells by name.
 
-    def __init__(self, name, worksheet, start, end):
+    To see how to access, manipulate the cell data, see CellRange documentation.
+    Like cell range, a named range is not synchronized. Any changes are only reflected in the cloud if it is saved.
+
+    `Reference <https://developers.google.com/sheets/api/reference/rest/v4/spreadsheets#namedrange>`_
+
+    IMPORTANT: Named ranges must have an unique name in the sheet!
+
+    :param name:            The name of this named range.
+    :param worksheet:       The worksheet this named range is part of.
+    :param start:           The start address.
+    :param end:             The end address.
+    :param named_range_id: (Optional) If the named_range already exists, add the named range id!
+    """
+
+    @classmethod
+    def from_json(cls, spreadsheet, **kwargs):
+        """Instantiate Named Range from JSON representation."""
+        return cls(name=kwargs['name'],
+                   worksheet=spreadsheet.worksheet('id', kwargs['range']['sheetId']),
+                   start=(kwargs['range']['startRowIndex'], kwargs['range']['endRowIndex']),
+                   end=(kwargs['range']['startColumnIndex'], kwargs['range']['endColumnIndex']),
+                   named_range_id=kwargs['namedRangeId'])
+
+    def __init__(self, name, worksheet, start, end, named_range_id=None):
         super().__init__(worksheet, start, end)
         self._name = name
-        self._id = None
-        self.load()
+        self._id = named_range_id
+        if self._id is None:
+            self._add_named_range()
 
     @property
     def id(self):
@@ -541,18 +577,166 @@ class NamedRange(DataRange):
             "range": self.grid_range
         }
 
-    def save(self):
-        pass
+    def delete(self):
+        """Remove the named range."""
+        request = {
+            'deleteNamedRange': {
+                'namedRangeId': self._id
+            }
+        }
+        self.worksheet.client.sheet.batch_update(self.worksheet.spreadsheet.id, request)
+        del self.worksheet.spreadsheet.named_ranges[self.name]
 
-    def load(self):
-        pass
+    def save(self):
+        """Save all changes in the named range to the sheet."""
+        request = {
+            'updateNamedRange': {
+                "namedRange": {
+                    "namedRangeId": self._id,
+                    "name": self._name,
+                    "range": self.grid_range,
+                },
+                "fields": '*',
+            }
+        }
+        self.worksheet.client.sheet.batch_update(self.worksheet.spreadsheet.id, request)
+
+    def _add_named_range(self):
+        request = {
+            "addNamedRange": {
+                "namedRange": {
+                    "name": self.name,
+                    "range": self.grid_range
+                }
+            }
+        }
+        response = self.worksheet.client.sheet.batch_update(self.worksheet.spreadsheet.id, request)
+        self._id = response['namedRange']['namedRangeId']
 
 
 class ProtectedRange(DataRange):
+    """
+    A protected range.
 
-    def __init__(self):
-        self._protected_id = None
-        self.description = ''
-        self.warningOnly = False
-        self.requestingUserCanEdit = False
-        self.editors = None
+
+    If unprotected ranges are specified, the protected range will be treated as unbounded for the purpose of
+    protecting the entire sheet.
+    """
+
+    @classmethod
+    def from_json(cls, worksheet, **kwargs):
+        pass
+
+    def __init__(self, worksheet, start, end, protected_range_id=None, **kwargs):
+        super().__init__(worksheet, start, end)
+        self._id = protected_range_id
+        self._description = kwargs.get('description', '')
+        self._warning_only = kwargs.get('warningOnly', False)
+        self._requesting_user_can_edit = kwargs.get('requestingUserCanEdit', False)
+        named_range_id = kwargs.get('namedRangeId', None)
+        if named_range_id is not None:
+            self._named_range = list(filter(lambda x: x.id != named_range_id, worksheet.spreadsheet.named_ranges.items()))[0]
+        else:
+            self._named_range = None
+        unprotected_ranges = kwargs.get('unprotectedRanges', None)
+        if unprotected_ranges is not None:
+            self._unprotected_ranges = [GridRange.from_json(worksheet, **unprotected_range) for unprotected_range in unprotected_ranges]
+        else:
+            self._unprotected_ranges = None
+        self._editors = kwargs.get('editors', None)
+
+        if self._id is None:
+            self._add_protected_range()
+
+    @property
+    def id(self):
+        return self._id
+
+    @property
+    def editable(self):
+        """Is this protected range editable by the requesting user?"""
+        return self._requesting_user_can_edit
+
+    @property
+    def named_range(self):
+        """Named range backing this protected range (Optional)."""
+        return self._named_range
+
+    @named_range.setter
+    def named_range(self, value):
+        self._named_range = value
+
+    @property
+    def warnings_only(self):
+        """"""
+        return self._warning_only
+
+    @warnings_only.setter
+    def warnings_only(self, value):
+        self._warning_only = value
+
+    @property
+    def description(self):
+        return self._description
+
+    @description.setter
+    def description(self, value):
+        self._description = value
+
+    @property
+    def unprotected_ranges(self):
+        return self._unprotected_ranges
+
+    @unprotected_ranges.setter
+    def unprotected_ranges(self, value):
+        self._unprotected_ranges = value
+
+    @property
+    def editors(self):
+        if self.editable:
+            return self._editors
+        else:
+            raise NoPermission('Only editors may view the editors of a protected range!')
+
+    @editors.setter
+    def editors(self, value):
+        if self.editable:
+            self._editors = value
+        else:
+            raise NoPermission('Only editors may change the editors of a protected range!')
+
+    def delete(self):
+        """Remove this protected range from worksheet."""
+        request = {
+            'deleteProtectedRange': {
+                'protectedRangeId': self._id
+            }
+        }
+        self.worksheet.client.sheet.batch_update(self.worksheet.spreadsheet.id, request)
+        # TODO: Remove protected range from worksheet, once added.
+
+    def save(self):
+        pass
+
+    def _add_protected_range(self):
+        request = {
+            "addProtectedRange": {
+                "protectedRange": {
+                    "description": self.description,
+                    "warningOnly": self._warning_only,
+                    "editors": self._editors
+                }
+            }
+        }
+        if self._unprotected_ranges is not None:
+            request['addProtectedRange']['protectedRange']['unprotectedRanges'] = self._unprotected_ranges
+            # when protecting a sheet, add an entirely unbounded range.
+            request['addProtectedRange']['protectedRange']['range'] = {}
+        elif self._named_range is not None:
+            request['addProtectedRange']['protectedRange']['namedRangeId'] = self._named_range.id
+        else:
+            request['addProtectedRange']['protectedRange']['range'] = self.grid_range
+
+        return self.worksheet.client.sheet.batch_update(self.worksheet.spreadsheet.id, request)
+
+

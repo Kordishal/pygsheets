@@ -383,7 +383,6 @@ class SheetAPIWrapper(object):
                                                               **kwargs)
         return self._execute_requests(request)
 
-
     def _execute_requests(self, request):
         """Execute a request to the Google Sheets API v4.
 

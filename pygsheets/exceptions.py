@@ -63,3 +63,11 @@ class CannotRemoveOwnerError(PyGsheetsException):
 
 class InvalidRange(PyGsheetsException):
     """An invalid range has been defined."""
+
+
+class NoPermission(PyGsheetsException):
+    """No permission to edit a protected range."""
+
+
+class DuplicateNamedRange(PyGsheetsException):
+    """Named ranges must have unique names!"""
