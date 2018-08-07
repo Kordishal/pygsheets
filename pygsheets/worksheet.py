@@ -14,7 +14,7 @@ from io import open
 import logging
 
 from pygsheets.cell import Cell
-from pygsheets.datarange import DataRange, Address, GridRange, NamedRange, Range
+from pygsheets.datarange import DataRange, Address, GridRange, NamedRange, Range, ProtectedRange
 from pygsheets.exceptions import (CellNotFound, InvalidArgumentValue, RangeNotFound)
 from pygsheets.utils import numericise_all, fullmatch
 from pygsheets.custom_types import *
@@ -42,6 +42,7 @@ class Worksheet(object):
         self.jsonSheet = jsonSheet
         self.data_grid = None  # for storing sheet data while unlinked
         self.grid_update_time = None
+        self._protected_ranges = [ProtectedRange.from_json(self, **protected_range) for protected_range in jsonSheet.get('protectedRanges', [])]
 
     def __repr__(self):
         return '<%s %s index:%s>' % (self.__class__.__name__,
@@ -1008,6 +1009,16 @@ class Worksheet(object):
         else:  # if not searchByRegex and not matchEntireCell and not matchCase
             return list(filter(lambda x: False if x.value.lower().find(pattern) == -1 else True, found_cells))
 
+    def named_range(self, name):
+        """Get a named range by name.
+
+        Note: This can return any named range attached to this sheets spreadsheet!
+
+        :param name:    Name of the named range.
+        :return:        :class:`NamedRange`
+        """
+        return self.spreadsheet.named_ranges[name]
+
     def add_named_range(self, name, start, end):
         """Create a new named range in this worksheet.
 
@@ -1020,29 +1031,24 @@ class Worksheet(object):
         self.spreadsheet.named_ranges[named_range.name] = named_range
         return named_range
 
-    def named_range(self, name):
-        """Get a named range by name.
+    @property
+    def protected_ranges(self):
+        """All protected ranges attached to this sheet."""
+        return self._protected_ranges
 
-        :param name:    Name of the named range.
-        :return:        :class:`NamedRange`
-        """
-        return self.spreadsheet.named_ranges[name]
-
-    def create_protected_range(self, gridrange):
+    def add_protected_range(self, start, end, **kwargs):
         """Create protected range.
 
         Reference: https://developers.google.com/sheets/api/reference/rest/v4/spreadsheets#protectedrange
 
-        :param gridrange:   Grid range of the cells to be protected.
+        :param start:       Start of the protected range.
+        :param end:         End of the protected range.
+        :param kwargs:      Protected range parameters. See Reference for details. Any unset parameter will use default
+                            values.
         """
-        if not self._linked: return False
-
-        request = {"addProtectedRange": {
-            "protectedRange": {
-                "range": gridrange
-            },
-        }}
-        return self.client.sheet.batch_update(self.spreadsheet.id, request)
+        prod = ProtectedRange(self, start, end, **kwargs)
+        self._protected_ranges.append(prod)
+        return prod
 
     def set_dataframe(self, df, start, copy_index=False, copy_head=True, fit=False, escape_formulae=False, nan='NaN'):
         """Load sheet from Pandas data frame.
