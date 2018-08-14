@@ -119,6 +119,12 @@ class Spreadsheet(object):
         for sheet in jsonsheet.get('sheets'):
             self._sheet_list.append(self.worksheet_cls(self, sheet))
 
+    def _get_worksheet(self, ):
+
+        response = self.client.sheet.get(self.id, fields='sheets')
+
+        return
+
     def worksheets(self, sheet_property=None, value=None, force_fetch=False):
         """Get worksheets matching the specified property.
 
@@ -407,5 +413,7 @@ class Spreadsheet(object):
             yield(sheet)
 
     def __getitem__(self, item):
-        if type(item) == int:
+        if isinstance(item, str):
+            return self.worksheet('title', item)
+        elif isinstance(item, int):
             return self.worksheet('index', item)
