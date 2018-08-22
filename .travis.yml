@@ -10,3 +10,4 @@ install: "pip install ."
 script:
   - "py.test -v test/authorization_tests.py"
   - "py.test -v test/online_test.py"
+  - "py.test -v test/test_address.py"

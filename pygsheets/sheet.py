@@ -1,5 +1,5 @@
 from pygsheets.spreadsheet import Spreadsheet
-from pygsheets.datarange import Address
+from pygsheets.ranges import Address
 from pygsheets.exceptions import InvalidArgumentValue
 from pygsheets.custom_types import ValueRenderOption, DateTimeRenderOption
 
