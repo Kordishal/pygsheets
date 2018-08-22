@@ -7,7 +7,7 @@ pygsheets.cell
 This module represents a cell within the worksheet.
 
 """
-from pygsheets.datarange import Address
+from pygsheets.ranges import Address
 from pygsheets.custom_types import *
 from pygsheets.exceptions import (IncorrectCellLabel, CellNotFound, InvalidArgumentValue)
 from pygsheets.utils import is_number

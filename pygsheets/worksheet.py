@@ -14,7 +14,8 @@ from io import open
 import logging
 
 from pygsheets.cell import Cell
-from pygsheets.datarange import DataRange, Address
+from pygsheets.ranges import Address
+from pygsheets.datarange import DataRange
 from pygsheets.exceptions import (CellNotFound, InvalidArgumentValue, RangeNotFound)
 from pygsheets.utils import numericise_all, fullmatch
 from pygsheets.custom_types import *
