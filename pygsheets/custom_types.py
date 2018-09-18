@@ -106,3 +106,15 @@ class Dimension(Enum):
     """Indicates which dimension an operation should apply to."""
     ROWS = 'ROWS'
     COLUMNS = 'COLUMNS'
+
+
+class ValueInputOption(Enum):
+    """Determines how input data should be interpreted.
+
+    RAW:            The values the user has entered will not be parsed and will be stored as-is.
+    USER_ENTERED:  	The values will be parsed as if the user typed them into the UI. Numbers will stay as numbers,
+                    but strings may be converted to numbers, dates, etc. following the same rules that are
+                    applied when entering text into a cell via the Google Sheets UI.
+    """
+    RAW = 'RAW'
+    USER_ENTERED = 'USER_ENTERED'

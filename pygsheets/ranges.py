@@ -8,7 +8,7 @@ A collection of support classes to deal with various types of ranges and address
 """
 
 from pygsheets.exceptions import InvalidArgumentValue, IncorrectCellLabel
-from pygsheets.custom_types import ValueRenderOption, DateTimeRenderOption, Dimension
+from pygsheets.custom_types import ValueRenderOption, DateTimeRenderOption, Dimension, ValueInputOption
 
 import re
 
@@ -111,7 +111,7 @@ class Address(object):
 
 
 
-class ValueRange(Sequence):
+class ValueRange(object):
 
     def __init__(self, worksheet, start, end, major_dimension=Dimension.ROWS):
         super().__init__(worksheet, start, end)
@@ -132,7 +132,7 @@ class ValueRange(Sequence):
     def start(self, value):
         self._start = Address(value)
 
-    @@property
+    @property
     def end(self):
         return self._end
 
@@ -143,6 +143,10 @@ class ValueRange(Sequence):
     @property
     def worksheet(self):
         return self._worksheet
+
+    @property
+    def range(self):
+        return '{}:{}'.format(self.start, self.end)
 
     @property
     def major_dimension(self):
