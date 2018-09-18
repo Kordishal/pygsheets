@@ -8,6 +8,7 @@ A collection of support classes to deal with various types of ranges and address
 """
 
 from pygsheets.exceptions import InvalidArgumentValue, IncorrectCellLabel
+from pygsheets.custom_types import ValueRenderOption
 
 import re
 
@@ -107,4 +108,126 @@ class Address(object):
         if result is NotImplemented:
             return result
         return not result
+
+
+
+class ValueRange(Sequence):
+
+    def __init__(self, worksheet, start, end, major_dimension=Dimension.ROWS):
+        super().__init__(worksheet, start, end)
+        self._start = Address(start)
+        self._end = Address(end)
+        self._worksheet = worksheet
+        self._major_dimension = major_dimension
+        self._value_render_option = ValueRenderOption.FORMATTED_VALUE
+        self._date_time_render_option = DateTimeRenderOption.FORMATTED_STRING
+        self._values = None
+        self.load()
+
+    @property
+    def start(self):
+        return self._start
+
+    @start.setter
+    def start(self, value):
+        self._start = Address(value)
+
+    @@property
+    def end(self):
+        return self._end
+
+    @end.setter
+    def end(self, value):
+        self._end = Address(value)
+
+    @property
+    def worksheet(self):
+        return self._worksheet
+
+    @property
+    def major_dimension(self):
+        """The major dimension of this value range. When changed, the values are reordered accordingly."""
+        return self._major_dimension
+
+    @major_dimension.setter
+    def major_dimension(self, value):
+        if isinstance(value, Dimension):
+            value = value.value
+        if self._major_dimension.name != value:
+            self._major_dimension = Dimension[value]
+            new_values = list()
+            for i in range(len(self._values[0])):
+                dimension = list()
+                for item in self._values:
+                    dimension.append(item[i])
+                new_values.append(dimension)
+            self._values = new_values
+
+    @property
+    def value_render_option(self):
+        return self._value_render_option
+
+    @value_render_option.setter
+    def value_render_option(self, value):
+        self._value_render_option = value
+
+    @property
+    def date_time_render_option(self):
+        return self._date_time_render_option
+
+    @date_time_render_option.setter
+    def date_time_render_option(self, value):
+        self._date_time_render_option = value
+
+    def to_json(self):
+        return {
+            'range': self.range,
+            'majorDimension': self.major_dimension.value,
+            'values': self._values
+        }
+
+    def save(self, value_input_option=ValueInputOption.USER_ENTERED, include_values_in_response=False):
+        """Saves all values in the spreadsheet."""
+        return self.worksheet.client.sheet.values_update(self.worksheet.spreadsheet.id,
+                                                         self.range,
+                                                         self.to_json(),
+                                                         value_input_option,
+                                                         include_values_in_response,
+                                                         response_value_render_option=self.value_render_option,
+                                                         response_date_time_render_option=self.date_time_render_option)
+
+    def load(self):
+        """Loads all values from spreadsheet. Careful: this will overwrite unsaved changes."""
+        response = self.worksheet.client.sheet.values_get(self.worksheet.spreadsheet.id,
+                                                          self.range,
+                                                          self.major_dimension,
+                                                          self.value_render_option,
+                                                          self.date_time_render_option)
+        self._values = response['values']
+
+    def __eq__(self, other):
+        if isinstance(other, ValueRange):
+            return self.range == other.range and self.worksheet.spreadsheet.id == other.worksheet.spreadsheet.id
+        else:
+            return NotImplemented
+
+    def __ne__(self, other):
+        result = self.__eq__(other)
+        if result is NotImplemented:
+            return result
+        return not result
+
+    def __iter__(self):
+        return self._values
+
+    def __len__(self):
+        return sum([len(v) for v in self._values])
+
+    def __getitem__(self, item):
+        return self._values[item]
+
+    def __repr__(self):
+        return '<{} "{}">'.format(self.__class__.__name__, self.range)
+
+
 
