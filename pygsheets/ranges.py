@@ -8,7 +8,7 @@ A collection of support classes to deal with various types of ranges and address
 """
 
 from pygsheets.exceptions import InvalidArgumentValue, IncorrectCellLabel
-from pygsheets.custom_types import ValueRenderOption
+from pygsheets.custom_types import ValueRenderOption, DateTimeRenderOption, Dimension
 
 import re
 
@@ -169,7 +169,10 @@ class ValueRange(Sequence):
 
     @value_render_option.setter
     def value_render_option(self, value):
-        self._value_render_option = value
+        if isinstance(value, ValueRenderOption):
+            self._value_render_option = value
+        else:
+            self._value_render_option = ValueRenderOption[value]
 
     @property
     def date_time_render_option(self):
@@ -177,7 +180,10 @@ class ValueRange(Sequence):
 
     @date_time_render_option.setter
     def date_time_render_option(self, value):
-        self._date_time_render_option = value
+        if isinstance(value, DateTimeRenderOption):
+            self._date_time_render_option = value
+        else:
+            self._date_time_render_option = DateTimeRenderOption[value]
 
     def to_json(self):
         return {

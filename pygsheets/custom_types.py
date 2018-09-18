@@ -100,3 +100,9 @@ class VerticalAlignment(Enum):
     MIDDLE = 'MIDDLE'
     BOTTOM = 'BOTTOM'
     NONE = None
+
+
+class Dimension(Enum):
+    """Indicates which dimension an operation should apply to."""
+    ROWS = 'ROWS'
+    COLUMNS = 'COLUMNS'
