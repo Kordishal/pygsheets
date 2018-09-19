@@ -1,7 +1,7 @@
 from pygsheets.spreadsheet import Spreadsheet
 from pygsheets.ranges import Address
 from pygsheets.exceptions import InvalidArgumentValue
-from pygsheets.custom_types import ValueRenderOption, DateTimeRenderOption
+from pygsheets.custom_types import ValueRenderOption, DateTimeRenderOption, Dimension
 
 from googleapiclient import discovery
 from googleapiclient.errors import HttpError
@@ -300,7 +300,7 @@ class SheetAPIWrapper(object):
     # def values_clear(self):
     #    pass
 
-    def values_get(self, spreadsheet_id, value_range, major_dimension='ROWS',
+    def values_get(self, spreadsheet_id, value_range, major_dimension=Dimension.ROWS,
                    value_render_option=ValueRenderOption.FORMATTED_VALUE,
                    date_time_render_option=DateTimeRenderOption.SERIAL_NUMBER):
         """Returns a range of values from a spreadsheet. The caller must specify the spreadsheet ID and a range.
@@ -321,6 +321,9 @@ class SheetAPIWrapper(object):
                                             dateTime render option is [DateTimeRenderOption.SERIAL_NUMBER].
         :return:                            `ValueRange <https://developers.google.com/sheets/api/reference/rest/v4/spreadsheets.values#ValueRange>`_
         """
+        if isinstance(major_dimension, Dimension):
+            major_dimension = major_dimension.value
+
         if isinstance(value_render_option, ValueRenderOption):
             value_render_option = value_render_option.value
 
@@ -333,6 +336,7 @@ class SheetAPIWrapper(object):
                                                            valueRenderOption=value_render_option,
                                                            dateTimeRenderOption=date_time_render_option)
         return self._execute_requests(request)
+
 
     # TODO: implement as base for batch update.
     # def values_update(self):

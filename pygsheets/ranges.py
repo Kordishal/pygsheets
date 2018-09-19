@@ -113,7 +113,6 @@ class Address(object):
 class ValueRange(object):
 
     def __init__(self, worksheet, start, end, major_dimension=Dimension.ROWS):
-        super().__init__(worksheet, start, end)
         self._start = Address(start)
         self._end = Address(end)
         self._worksheet = worksheet
@@ -212,7 +211,18 @@ class ValueRange(object):
                                                           self.major_dimension,
                                                           self.value_render_option,
                                                           self.date_time_render_option)
-        self._values = response['values']
+
+        self._major_dimension = Dimension[response['majorDimension']]
+        self._values = response.get('values', None)
+        if self._values is None:
+            # if all values are empty no values are returned. fill in with blank cells.
+            self._values = list()
+            if self._major_dimension is Dimension.ROWS:
+                for i in range(self.start[0], self.end[0] + 1):
+                    self._values.append(list([''] * (self.end[1] - self.start[1] + 1)))
+            elif self._major_dimension is Dimension.COLUMNS:
+                for i in range(self.start[1], self.end[1] + 1):
+                    self._values.append(list([''] * (self.end[0] - self.start[0] + 1)))
 
     def __eq__(self, other):
         if isinstance(other, ValueRange):
@@ -230,7 +240,7 @@ class ValueRange(object):
         return self._values
 
     def __len__(self):
-        return sum([len(v) for v in self._values])
+        return len(self._values)
 
     def __getitem__(self, item):
         return self._values[item]

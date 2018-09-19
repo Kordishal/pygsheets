@@ -10,7 +10,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import pygsheets
 from pygsheets.exceptions import CannotRemoveOwnerError
 from pygsheets.custom_types import ExportType
-from pygsheets import Cell
+from pygsheets import Cell, ValueRange
 from pygsheets.custom_types import HorizontalAlignment, VerticalAlignment
 
 try:
@@ -712,3 +712,29 @@ class TestCell(object):
         cell.wrap_strategy = "WRAP"
         cell = self.worksheet.get_values('A1', 'A1', returnas="range")[0][0]
         assert cell.wrap_strategy == "WRAP"
+
+
+class TestValueRange(object):
+
+    def setup_class(self):
+        title = test_config.get('Spreadsheet', 'title') + PYTHON_VERSION
+        self.spreadsheet = pygsheet_client.create(title)
+        self.worksheet = self.spreadsheet.worksheet()
+        self.value_range = ValueRange(self.worksheet, 'A1', 'C15')
+
+    def test_load(self):
+        self.value_range.load()
+        assert len(self.value_range) == 15
+        assert len(self.value_range[0]) == 3
+
+    def test_change(self):
+        self.value_range[0][1] = 100
+        self.value_range[1][2] = 'We are very strong'
+        self.value_range.save()
+        self.value_range.load()
+        assert len(self.value_range) == 15
+        assert len(self.value_range[0]) == 3
+        self.worksheet.clear()
+
+    def teardown_class(self):
+        self.spreadsheet.delete()
