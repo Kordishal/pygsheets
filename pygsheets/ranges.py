@@ -110,7 +110,6 @@ class Address(object):
         return not result
 
 
-
 class ValueRange(object):
 
     def __init__(self, worksheet, start, end, major_dimension=Dimension.ROWS):
@@ -238,6 +237,4 @@ class ValueRange(object):
 
     def __repr__(self):
         return '<{} "{}">'.format(self.__class__.__name__, self.range)
-
-
 

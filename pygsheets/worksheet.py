@@ -1296,8 +1296,8 @@ class Worksheet(object):
 
 
         if not self._linked: return False
-        start = format_addr(start, 'tuple')
-        end = format_addr(end, 'tuple')
+        start = Address(start)
+        end = Address(end)
 
         request ={"sortRange": {
             "range":{

@@ -10,6 +10,7 @@ protected ranges, banned ranges etc.
 
 """
 from pygsheets.exceptions import InvalidArgumentValue, CellNotFound
+from pygsheets.ranges import Address
 
 import warnings
 

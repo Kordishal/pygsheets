@@ -15,7 +15,8 @@ from pygsheets.authorization import authorize
 from pygsheets.spreadsheet import Spreadsheet
 from pygsheets.worksheet import Worksheet
 from pygsheets.cell import Cell
-from pygsheets.datarange import DataRange, Address
+from pygsheets.datarange import DataRange
+from pygsheets.ranges import Address, ValueRange
 from pygsheets.utils import format_addr
 from pygsheets.custom_types import (FormatType, WorkSheetProperty,
                                     ValueRenderOption, ExportType)
