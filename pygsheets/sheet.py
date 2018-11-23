@@ -1,7 +1,7 @@
 from pygsheets.spreadsheet import Spreadsheet
 from pygsheets.ranges import Address
 from pygsheets.exceptions import InvalidArgumentValue
-from pygsheets.custom_types import ValueRenderOption, DateTimeRenderOption, Dimension
+from pygsheets.custom_types import ValueRenderOption, DateTimeRenderOption, Dimension, ValueInputOption
 
 from googleapiclient import discovery
 from googleapiclient.errors import HttpError
@@ -337,10 +337,51 @@ class SheetAPIWrapper(object):
                                                            dateTimeRenderOption=date_time_render_option)
         return self._execute_requests(request)
 
+    def values_update(self, spreadsheet_id, range, value_range,
+                      value_input_option=ValueInputOption.USER_ENTERED,
+                      include_values_in_response=False,
+                      response_value_render_option=ValueRenderOption.FORMATTED_VALUE,
+                      response_date_time_render_option=DateTimeRenderOption.SERIAL_NUMBER,
+                      **kwargs):
+        """Sets values in a range of a spreadsheet.
+        :param spreadsheet_id:                      The ID of the spreadsheet to update.
+        :param range:                               The A1 notation of the values to update.
+        :param value_range:                         The request body.
+        :param value_input_option:                  How the input data should be interpreted.
+        :param include_values_in_response:          Determines if the update response should include the values of
+                                                    the cells that were updated. By default, responses do not
+                                                    include the updated values. If the range to write was larger
+                                                    than than the range actually written, the response will include
+                                                    all values in the requested range (excluding trailing empty rows
+                                                    and columns).
+        :param response_value_render_option:        Determines how values in the response should be rendered.
+                                                    The default render option is ValueRenderOption.FORMATTED_VALUE.
+        :param response_date_time_render_option:    Determines how dates, times, and durations in the response should
+                                                    be rendered. This is ignored if responseValueRenderOption is
+                                                    FORMATTED_VALUE. The default dateTime render option is
+                                                    [DateTimeRenderOption.SERIAL_NUMBER].
+        :param kwargs:                              Standard parameters. See reference for details.
+        :return:
+        """
+        if isinstance(value_input_option, ValueInputOption):
+            value_input_option = value_input_option.value
 
-    # TODO: implement as base for batch update.
-    # def values_update(self):
-    #    pass
+        if isinstance(response_value_render_option, ValueRenderOption):
+            response_value_render_option = response_value_render_option.value
+
+        if isinstance(response_date_time_render_option, DateTimeRenderOption):
+            response_date_time_render_option = response_date_time_render_option.value
+
+        request = self.service.spreadsheets().values().update(spreadsheetId=spreadsheet_id,
+                                                              range=range,
+                                                              body=value_range,
+                                                              valueInputOption=value_input_option,
+                                                              includeValuesInResponse=include_values_in_response,
+                                                              responseValueRenderOption=response_value_render_option,
+                                                              responseDateTimeRenderOption=response_date_time_render_option,
+                                                              **kwargs)
+
+        return self._execute_requests(request)
 
     def _execute_requests(self, request):
         """Execute a request to the Google Sheets API v4.

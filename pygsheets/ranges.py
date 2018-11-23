@@ -224,6 +224,8 @@ class ValueRange(object):
                 for i in range(self.start[1], self.end[1] + 1):
                     self._values.append(list([''] * (self.end[0] - self.start[0] + 1)))
 
+        print(self._values)
+
     def __eq__(self, other):
         if isinstance(other, ValueRange):
             return self.range == other.range and self.worksheet.spreadsheet.id == other.worksheet.spreadsheet.id
